@@ -19,6 +19,40 @@ running on a fresh Kali Linux VM. Follow the sections in order.
     touch. Defaults assume Metasploitable on 192.168.56.101.
 
 ----------------------------------------------------------------
+ STEP 0 — PREPARE THE TARGET VM (DO THIS FIRST)
+----------------------------------------------------------------
+
+  Nothing below works until Kali can reach a target. Set this up
+  before installing anything.
+
+  1. In your hypervisor, put BOTH Kali and the target VM on the
+     same isolated network:
+       - VirtualBox:  Host-Only Adapter (vboxnet0)
+       - VMware:      Host-only
+       - KVM/libvirt: an isolated virtual network
+     Host-Only / isolated keeps the deliberately vulnerable target
+     off your real LAN and off the internet — required by section 9
+     of the FYP brief.
+
+  2. Boot the target and find its IP:
+       ip a          (Linux target, e.g. Metasploitable)
+       ipconfig      (Windows target)
+
+  3. Give it a STATIC IP or a DHCP reservation. On plain DHCP the
+     address can change after a reboot, and you will then either
+     scan nothing or scan whichever device inherited the lease.
+
+  4. Confirm reachability FROM KALI:
+
+       ping -c3 192.168.56.101
+
+     If this fails, fix networking before continuing — every later
+     step depends on it.
+
+  5. Note the IP. It must fall inside ALLOWED_TARGET_RANGES in
+     STEP 3, or the agent will refuse every action.
+
+----------------------------------------------------------------
  STEP 1 — CLONE THE REPO
 ----------------------------------------------------------------
 
@@ -38,13 +72,16 @@ running on a fresh Kali Linux VM. Follow the sections in order.
       crackmapexec (or netexec), nuclei, rustscan
     - Docker + docker-compose
     - Python venv (.venv/) and everything in requirements.txt
-    - MITRE CALDERA into ./caldera with its own venv (adversary-
-      emulation server for the `caldera` tool — best-effort; setup
-      keeps going if this part fails)
+    - nodejs + npm (needed to build the CALDERA web UI)
+    - CALDERA into ./caldera with its own venv, pinned to release
+      5.3.0 from github.com/apache/caldera — a REQUIRED component
+      (FYP brief 1.1 / 2.4). If this part fails, setup finishes the
+      rest and prints a loud CALDERA INSTALL FAILED block at the
+      end with retry commands. Do not ignore it.
     - Copies .env.example to .env if .env doesn't exist yet
 
-  Takes 10-20 minutes. GVM (~1 GB) and pip installs are the slow
-  parts. Type your sudo password when asked.
+  Takes 15-30 minutes. GVM (~1 GB), pip installs, and the CALDERA
+  npm build are the slow parts. Type your sudo password when asked.
 
   If the script reports it added you to the 'docker' group, log
   out and back in (or run: newgrp docker) before continuing.
@@ -55,18 +92,40 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
     nano .env
 
-  At minimum, set:
+  ONE setting has no working default and must be filled in:
 
     ANTHROPIC_API_KEY=sk-ant-...your real key...
 
-  Everything else has working defaults that match the rest of
-  this guide. Optional things you may want to change:
+  ONE setting to check against your lab — it ships pre-filled with
+  the three environments from the brief, so if your target from
+  STEP 0 is on 192.168.56.0/24 it already works untouched:
+
+    ALLOWED_TARGET_RANGES=192.168.56.0/24,10.10.0.0/16,10.20.0.0/16
+        Comma-separated CIDR allowlist. The IP from STEP 0 MUST be
+        inside one of these or every action is rejected as "out of
+        scope". Add your CIDR if your lab uses different addressing.
+
+        Keep the mask tight — the agent may touch anything inside
+        the ranges listed here. If the target shares a LAN with
+        real devices, pin the single host:
+            ALLOWED_TARGET_RANGES=192.168.56.101/32
+
+        Leaving it EMPTY disables the check entirely (everything is
+        allowed). The CLI warns on stderr when this happens; never
+        blank it out just to make an error go away.
+
+  Everything else has working defaults that match this guide:
 
     LLM_PROVIDER             "anthropic" or "ollama"
     ANTHROPIC_MODEL          default: claude-sonnet-4-6
     NEO4J_PASSWORD           must match docker-compose.yml
-    ALLOWED_TARGET_RANGES    CIDRs the agent is allowed to touch
+    CALDERA_API_KEY          must match the CALDERA server (STEP 6B)
     DEFAULT_MODE             "human_in_loop" or "autonomous"
+
+  NOTE: .env is read ONCE when the Python process starts. After
+  editing it, stop the running engine/dashboard and relaunch —
+  starting a new session inside the same process will not pick up
+  the change.
 
 ----------------------------------------------------------------
  STEP 4 — START THE DATABASES (POSTGRES + NEO4J)
@@ -209,14 +268,35 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
     pytest -v
 
-  All tests should pass. They mock the offensive binaries, so
+  All 129 tests should pass. They mock the offensive binaries, so
   failures here mean code/dependency problems, not lab issues.
+
+----------------------------------------------------------------
+ BEFORE STEP 8 — WHAT MUST BE RUNNING
+----------------------------------------------------------------
+
+  A live session needs these up at the same time. Every terminal
+  that runs Python needs `source .venv/bin/activate` first.
+
+    Terminal 1   docker compose up -d          Postgres + Neo4j
+                 (detached — start once, stays up)
+    Terminal 2   ./scripts/start_msfrpc.sh     Metasploit RPC
+                 (foreground — required for exploitation)
+    Terminal 3   ./scripts/start_caldera.sh    CALDERA server
+                 (foreground — first start is slow)
+    Terminal 4   your working shell            run the engine here
+
+  Terminals 2 and 3 are unnecessary if you installed the systemd
+  units in STEP 6 / 6B. Confirm the listeners either way:
+
+      ss -tlnp | grep -E '55553|8888'
 
 ----------------------------------------------------------------
  STEP 8 — RUN A SESSION
 ----------------------------------------------------------------
 
-  Two ways to drive the agent:
+  Two ways to drive the agent. They approve actions DIFFERENTLY —
+  read the note below before choosing.
 
   (a) Command line — start a session against one target:
 
@@ -224,33 +304,103 @@ running on a fresh Kali Linux VM. Follow the sections in order.
                            --env env1 \
                            --mode human_in_loop
 
+      IMPORTANT: started this way, human_in_loop prompts AT THE
+      TERMINAL, not in the dashboard (main.py passes CLIGateway).
+      You will see, for each proposed action:
+
+        ────────────────────────────────────────────────────
+        [Mode B] Proposed action for node 3f2a...
+          Title:   Port scan target
+          Tool:    nmap
+          Params:  {"target": "192.168.56.101", ...}
+          Why:     Establish attack surface before enumeration
+        Approve? [y/N/skip]:
+
+        y      execute it
+        skip   skip this node and move on
+        other  reject it
+
       Other CLI commands:
 
         python main.py list                  # past sessions
         python main.py tree <session_id>     # show the PTT
         python main.py report <session_id>   # generate HTML report
 
-  (b) Web dashboard (recommended for human-in-the-loop):
+        # many hosts concurrently (CIDR, comma list, or host file)
+        python main.py run-range --targets 10.10.0.0/24 \
+                                --env env2 --workers 8
+
+        # score a run against ground truth (FYP D5)
+        python main.py benchmark \
+            --manifest benchmark/ground_truth/metasploitable2.json
+
+  (b) Web dashboard (best for demos and supervised training):
 
         uvicorn api.main:app --reload
 
-      Then open http://localhost:8000 in your browser. From the
-      dashboard you can:
-        - start sessions
+      Then open http://localhost:8000 in your browser.
+
+      Creating a session and running it are TWO separate actions:
+
+        1. Fill in the new-session form (name, target, env, mode)
+           and submit. This only creates the session row and
+           bootstraps the 7 phase nodes — the agent is NOT running
+           yet, and nothing has touched the target.
+        2. In the session panel that appears, click "Start agent".
+           That is what launches the agent loop (in a background
+           thread). The button is disabled while a session runs.
+
+      From the dashboard you can then:
         - watch the PTT update live
         - approve / reject the agent's proposed actions
-        - download generated reports
+        - abort a running session
+        - save / download the generated report
+
+      Sessions started HERE use DBPollingGateway: the node is set
+      to awaiting_approval and the agent blocks until you click.
+      That wait TIMES OUT AFTER 1 HOUR and auto-rejects the node,
+      so don't leave a supervised session unattended.
+
+  DO NOT MIX THE TWO. A session started from the CLI is blocked on
+  a terminal input() prompt — it never writes awaiting_approval, so
+  the dashboard will show nothing to approve and both sides hang.
+
+----------------------------------------------------------------
+ WHERE OUTPUT LANDS
+----------------------------------------------------------------
+
+  Paths are relative to the repo root, so run commands from there.
+
+    artefacts/reports/<session_id>.html        pentest report
+    artefacts/benchmarks/<session_id>.json     benchmark scores
+    artefacts/benchmarks/<session_id>.md       benchmark summary
+
+  The whole artefacts/ tree is gitignored — reports contain live
+  vulnerability detail and credentials. Handle them per section 9
+  of the FYP brief.
 
 ----------------------------------------------------------------
  OPERATION MODES
 ----------------------------------------------------------------
 
   autonomous       Agent executes every step it decides on, no
-                   human gate. Use for benchmarks.
+                   human gate. Use for benchmarks and unattended
+                   runs.
 
-  human_in_loop    Every action is set to awaiting_approval and
-                   blocks until you approve/reject in the
-                   dashboard. Use for SOC training and demos.
+  human_in_loop    Every action waits for your approval. WHERE it
+                   waits depends on how you launched the session:
+
+                     started from the CLI  -> CLIGateway
+                         prompts in that terminal; blocks on
+                         input() indefinitely.
+
+                     started from dashboard -> DBPollingGateway
+                         sets the node to awaiting_approval and
+                         polls the DB; you click approve/reject
+                         at http://localhost:8000. Times out
+                         after 1 hour and auto-rejects.
+
+                   Use for SOC training and demos.
 
 ----------------------------------------------------------------
  TARGET ENVIRONMENTS
@@ -272,7 +422,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
   7687    Neo4j (Bolt)             Docker — used by BloodHound
   55553   Metasploit RPC           Kali host (msfrpcd)
   8000    FastAPI dashboard        venv (uvicorn)
-  8888    CALDERA server           Kali host (server.py) — optional
+  8888    CALDERA server           Kali host (server.py)
 
 ----------------------------------------------------------------
  COMMON PROBLEMS
@@ -287,7 +437,31 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   - "Target out of scope"
       The IP isn't covered by ALLOWED_TARGET_RANGES in .env.
-      Add the CIDR and restart the session.
+      Add the CIDR, then RESTART THE PROCESS (see next entry).
+
+      Two non-obvious causes:
+        * You passed a HOSTNAME. Once an allowlist is set, only
+          literal IPs pass the check — `--target myvm.lab` is
+          always rejected. Use the IP. (URLs are fine; the host
+          is extracted from them.)
+        * You passed a CIDR as a tool target. Ranges fail the
+          check by design, so the agent cannot widen a single-host
+          run into a subnet sweep. Use `run-range` for that.
+
+  - Edited .env but nothing changed
+      Settings load once at process start. Stop the engine or
+      the uvicorn dashboard completely and relaunch. Starting a
+      new session in the same process re-uses the old values.
+
+  - Dashboard shows nothing to approve
+      You started the session from the CLI, so it is waiting on a
+      terminal prompt, not the database. Answer it in that
+      terminal, or restart the session from the dashboard. See
+      STEP 8.
+
+  - Session hangs, then "Approval timeout after 3600.0s"
+      A dashboard session sat unapproved for an hour and the node
+      was auto-rejected. Restart the session and stay with it.
 
   - Anthropic 401 errors
       ANTHROPIC_API_KEY in .env is wrong or empty.

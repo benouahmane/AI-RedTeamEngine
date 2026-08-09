@@ -87,23 +87,27 @@ echo "--- [7/7] Installing CALDERA (adversary-emulation server) ---"
 # so setup is reproducible — bump CALDERA_TAG to upgrade deliberately.
 CALDERA_TAG="${CALDERA_TAG:-5.3.0}"
 
-# Node is needed for `server.py --build`, which bundles the VueJS UI. The UI is
-# how you generate sandcat agent-deploy commands for the lab targets.
-sudo apt install -y nodejs npm
-
+# NOTE: calling this from an `if` suppresses `set -e` inside the whole function
+# body, and the function's exit status would otherwise be that of its LAST
+# command. Every step therefore needs an explicit `|| return 1`, or a failed
+# clone would still report success and skip the warning block below.
 install_caldera() {
+    # Node is needed for `server.py --build`, which bundles the VueJS UI — the
+    # UI is how you generate sandcat agent-deploy commands for the targets.
+    sudo apt install -y nodejs npm || return 1
+
     if [ -d caldera/.git ]; then
         echo "    CALDERA already present at ./caldera — skipping clone."
         echo "    (To re-pin: rm -rf caldera && re-run this script.)"
     else
         git clone https://github.com/apache/caldera.git --recursive \
-            --branch "$CALDERA_TAG" caldera
+            --branch "$CALDERA_TAG" caldera || return 1
     fi
     if [ ! -d caldera/.venv ]; then
-        python3 -m venv caldera/.venv
+        python3 -m venv caldera/.venv || return 1
     fi
-    caldera/.venv/bin/pip install --upgrade pip
-    caldera/.venv/bin/pip install -r caldera/requirements.txt
+    caldera/.venv/bin/pip install --upgrade pip || return 1
+    caldera/.venv/bin/pip install -r caldera/requirements.txt || return 1
     echo "    CALDERA $CALDERA_TAG installed."
 }
 if install_caldera; then
@@ -116,15 +120,21 @@ echo
 echo "============================================================"
 echo " Setup complete."
 echo
-echo " Next steps:"
-echo "   1. Edit .env and set ANTHROPIC_API_KEY (and any other secrets)."
+echo " Next steps (run each in an activated venv):"
+echo "   1. Edit .env and set ANTHROPIC_API_KEY."
+echo "      Check ALLOWED_TARGET_RANGES covers your target's IP."
 echo "   2. Start the databases:    docker compose up -d"
 echo "   3. Run DB migrations:      alembic upgrade head"
 echo "   4. Smoke-test:             pytest -v"
-echo "   5. Run a session:          python main.py run --target <ip>"
 echo
-echo "   6. Start CALDERA:          ./scripts/start_caldera.sh"
-echo "      (own terminal; first start builds the UI and is slow)"
+echo "   Leave these running, each in its own terminal:"
+echo "   5. Metasploit RPC:         ./scripts/start_msfrpc.sh"
+echo "   6. CALDERA server:         ./scripts/start_caldera.sh"
+echo "      (first start builds the UI and is slow)"
+echo
+echo "   7. Run a session:          python main.py run --target <ip>"
+echo
+echo " Full walkthrough, including target VM setup: INSTRUCTIONS.txt"
 echo
 if [ "${DOCKER_GROUP_ADDED:-0}" = "1" ]; then
     echo " NOTE: you were added to the 'docker' group. Log out and back in"
