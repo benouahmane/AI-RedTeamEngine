@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AI Red Team Engine — Dashboard</title>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    :root {
+      --bg: #f6f6f4;
+      --fg: #1d1d1d;
+      --muted: #6b6b6b;
+      --line: #d8d8d2;
+      --card: #ffffff;
+      --accent: #b91c1c;
+      --accent-dark: #7f1313;
+      --green: #166534;
+      --orange: #9a3412;
+      --blue: #1e40af;
+      --code-bg: #1c1c1c;
+      --code-fg: #e6e6e6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    h1 {
+      border-bottom: 3px solid var(--accent);
+      padding-bottom: .4rem;
+      margin: 0 0 1.2rem;
+      font-size: 1.6rem;
+      letter-spacing: .02em;
+    }
+    h1 small {
+      font-size: .8rem;
+      color: var(--muted);
+      font-weight: normal;
+      margin-left: .5rem;
+    }
+    h2 { margin-top: 0; font-size: 1.05rem; }
+    h3 { margin-top: 0; font-size: .95rem; color: var(--accent-dark); }
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.2rem;
+      margin-bottom: 1.2rem;
+    }
+    .panel-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1rem 1.1rem;
+    }
+
+    /* Sessions table */
+    .sessions-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+    }
+    .sessions-table th, .sessions-table td {
+      border-bottom: 1px solid var(--line);
+      padding: .45rem .6rem;
+      text-align: left;
+    }
+    .sessions-table th { font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .session-row { cursor: pointer; transition: background .15s; }
+    .session-row:hover { background: #f0efeb; }
+
+    /* Form */
+    form.new-session label { display: block; margin: .4rem 0 .15rem; font-size: 12px; color: var(--muted); }
+    form.new-session input,
+    form.new-session select,
+    form.new-session textarea {
+      width: 100%;
+      padding: .4rem .55rem;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: #fff;
+      font: inherit;
+      font-size: 13px;
+    }
+    form.new-session textarea { font-family: inherit; resize: vertical; min-height: 50px; }
+
+    /* Buttons */
+    button, .btn-link {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      padding: .42rem .9rem;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: none;
+      display: inline-block;
+      font-weight: 500;
+    }
+    button:hover { background: var(--accent-dark); }
+    button:disabled { background: #999; cursor: not-allowed; }
+    button.secondary, .btn-link.secondary { background: #4b5563; }
+    button.secondary:hover { background: #2d3340; }
+    button.danger { background: #6b1414; }
+    button.danger:hover { background: #4d0a0a; }
+    button.primary { background: var(--green); }
+    button.primary:hover { background: #0e4220; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      vertical-align: middle;
+      margin-left: .3rem;
+      background: #e5e5e0;
+      color: #444;
+    }
+    .badge.status-running     { background: #dbeafe; color: #1e40af; }
+    .badge.status-completed   { background: #dcfce7; color: #166534; }
+    .badge.status-aborted     { background: #fee2e2; color: #991b1b; }
+    .badge.status-error       { background: #fee2e2; color: #991b1b; }
+    .badge.status-paused      { background: #fef3c7; color: #92400e; }
+    .badge.status-initialising { background: #f3f4f6; color: #4b5563; }
+    .badge.mode-autonomous    { background: #fee2e2; color: #991b1b; }
+    .badge.mode-human_in_loop { background: #e0e7ff; color: #3730a3; }
+    .badge.phase-recon        { background: #f3f4f6; color: #1f2937; }
+    .badge.phase-enumeration  { background: #ecfccb; color: #3f6212; }
+    .badge.phase-vuln_id      { background: #fef3c7; color: #92400e; }
+    .badge.phase-exploitation { background: #fee2e2; color: #991b1b; }
+    .badge.phase-post_exploit { background: #fce7f3; color: #9d174d; }
+    .badge.phase-lateral_movement { background: #ede9fe; color: #5b21b6; }
+    .badge.phase-objective    { background: #cffafe; color: #155e75; }
+    .badge.ttp                { background: #1f2937; color: #f3f4f6; font-family: monospace; }
+    .badge.priority           { background: #fef3c7; color: #78350f; font-family: monospace; }
+    .badge.sev-critical       { background: #7f1d1d; color: #fff; }
+    .badge.sev-high           { background: #b91c1c; color: #fff; }
+    .badge.sev-medium         { background: #d97706; color: #fff; }
+    .badge.sev-low            { background: #65a30d; color: #fff; }
+    .badge.sev-info           { background: #6b7280; color: #fff; }
+
+    /* Panel */
+    .panel-header h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+    .panel-header .meta { color: var(--muted); font-size: 12px; }
+    .panel-header .meta span { margin-right: 1rem; }
+    .panel-header .objective {
+      font-style: italic;
+      background: #fafaf7;
+      border-left: 3px solid var(--accent);
+      padding: .3rem .6rem;
+      margin: .5rem 0;
+      font-size: 13px;
+    }
+    .panel-header .actions { margin: .8rem 0; display: flex; gap: .4rem; flex-wrap: wrap; }
+    .panel-header .stats { color: var(--muted); font-size: 13px; }
+    .panel-header .stats span { margin-right: 1.2rem; }
+
+    /* Tree */
+    pre.tree, pre {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: .8rem;
+      overflow-x: auto;
+      font-size: 12.5px;
+      line-height: 1.5;
+      border-radius: 4px;
+      margin: 0;
+      max-height: 460px;
+    }
+
+    /* Approvals */
+    .approval-card {
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+      padding: .7rem .9rem;
+      margin-bottom: .6rem;
+      background: #fefefb;
+    }
+    .approval-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; }
+    .approval-card .rationale { color: #444; font-size: 13px; margin: .3rem 0; }
+    .approval-card .kv { font-size: 12px; margin: .2rem 0; }
+    .approval-card .kv .k { color: var(--muted); margin-right: .3rem; }
+    .approval-card details.params-block { margin-top: .5rem; }
+    .approval-card details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+    .approval-card textarea.params {
+      width: 100%;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: .4rem;
+      margin: .4rem 0;
+      background: #fafafa;
+    }
+    .approval-card .approval-actions { display: flex; gap: .4rem; margin-top: .3rem; }
+    p.empty { padding: 1rem; text-align: center; }
+
+    /* Findings */
+    .findings details { margin: .4rem 0; border-top: 1px solid var(--line); padding-top: .4rem; }
+    .findings details:first-of-type { border-top: 0; padding-top: 0; }
+    .findings summary { cursor: pointer; padding: .3rem 0; font-size: 13px; }
+    .findings table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: .4rem 0; }
+    .findings table th, .findings table td { border: 1px solid var(--line); padding: .3rem .5rem; text-align: left; }
+    .findings table th { background: #fafaf7; font-weight: 600; font-size: 11px; color: var(--muted); }
+
+    code { background: #f0efeb; padding: 1px 5px; border-radius: 2px; font-size: 92%; }
+    .muted { color: var(--muted); font-size: 12.5px; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 11px; text-align: center; }
+
+    /* HTMX request indicator */
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline; }
+  </style>
+</head>
+<body>
+
+<h1>
+  AI Red Team Engine
+  <small>FYP P1 — Cybertronium</small>
+</h1>
+
+<div class="top-grid">
+
+  <div class="card">
+    <h2>Sessions</h2>
+    <div hx-get="/api/sessions/html"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+      <p class="muted">Loading sessions…</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>New session</h2>
+    <form class="new-session"
+          hx-post="/api/sessions/form"
+          hx-target="#selected-panel"
+          hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) this.reset()">
+      <label for="ns-name">Name</label>
+      <input id="ns-name" name="name" required placeholder="e.g. metasploitable-baseline">
+
+      <label for="ns-target">Target (IP / CIDR / host)</label>
+      <input id="ns-target" name="target" required placeholder="192.168.56.101">
+
+      <label for="ns-env">Environment</label>
+      <select id="ns-env" name="environment" required>
+        <option value="env1">env1 — Classic Vuln VMs (Metasploitable)</option>
+        <option value="env2">env2 — VulnHub Range</option>
+        <option value="env3">env3 — GOAD Active Directory</option>
+      </select>
+
+      <label for="ns-mode">Mode</label>
+      <select id="ns-mode" name="mode">
+        <option value="human_in_loop">Mode B — Human-in-the-loop</option>
+        <option value="autonomous">Mode A — Autonomous</option>
+      </select>
+
+      <label for="ns-objective">Objective (optional)</label>
+      <textarea id="ns-objective" name="objective"
+                placeholder="e.g. Achieve root and document each CVE exploited."></textarea>
+
+      <button type="submit" style="margin-top: .8rem;">Create session</button>
+    </form>
+  </div>
+
+</div>
+
+<div id="selected-panel" class="card" style="background: #fffefa;">
+  <p class="muted">Click a session above, or create a new one to view its dashboard.</p>
+</div>
+
+<footer>
+  Lab use only. All testing strictly confined to authorised lab VMs.
+  &middot; Confidential — Cybertronium Sdn. Bhd.
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,320 @@
+================================================================
+ AI RED TEAM ENGINE — END-TO-END SETUP & RUN GUIDE (KALI LINUX)
+================================================================
+
+This file is the single source of truth for getting the engine
+running on a fresh Kali Linux VM. Follow the sections in order.
+
+----------------------------------------------------------------
+ PREREQUISITES
+----------------------------------------------------------------
+
+  - Kali Linux VM (rolling release, 2024+).
+  - At least 4 GB RAM and 30 GB free disk (GVM and the Docker
+    images are the largest chunks).
+  - Outbound internet access (only during install, not for the
+    agent at runtime).
+  - An Anthropic API key (sk-ant-...).
+  - At least one isolated lab target the agent is allowed to
+    touch. Defaults assume Metasploitable on 192.168.56.101.
+
+----------------------------------------------------------------
+ STEP 1 — CLONE THE REPO
+----------------------------------------------------------------
+
+    git clone https://github.com/TheRamiB/AI-RedTeamEngine.git
+    cd AI-RedTeamEngine
+
+----------------------------------------------------------------
+ STEP 2 — RUN THE SETUP SCRIPT
+----------------------------------------------------------------
+
+    chmod +x setup_kali.sh
+    ./setup_kali.sh
+
+  This installs:
+    - OS tools: nmap, gobuster, ffuf, nikto, sqlmap, theharvester,
+      metasploit-framework, hashcat, hydra, john, gvm, gvm-tools,
+      crackmapexec (or netexec), nuclei, rustscan
+    - Docker + docker-compose
+    - Python venv (.venv/) and everything in requirements.txt
+    - MITRE CALDERA into ./caldera with its own venv (adversary-
+      emulation server for the `caldera` tool — best-effort; setup
+      keeps going if this part fails)
+    - Copies .env.example to .env if .env doesn't exist yet
+
+  Takes 10-20 minutes. GVM (~1 GB) and pip installs are the slow
+  parts. Type your sudo password when asked.
+
+  If the script reports it added you to the 'docker' group, log
+  out and back in (or run: newgrp docker) before continuing.
+
+----------------------------------------------------------------
+ STEP 3 — CONFIGURE SECRETS
+----------------------------------------------------------------
+
+    nano .env
+
+  At minimum, set:
+
+    ANTHROPIC_API_KEY=sk-ant-...your real key...
+
+  Everything else has working defaults that match the rest of
+  this guide. Optional things you may want to change:
+
+    LLM_PROVIDER             "anthropic" or "ollama"
+    ANTHROPIC_MODEL          default: claude-sonnet-4-6
+    NEO4J_PASSWORD           must match docker-compose.yml
+    ALLOWED_TARGET_RANGES    CIDRs the agent is allowed to touch
+    DEFAULT_MODE             "human_in_loop" or "autonomous"
+
+----------------------------------------------------------------
+ STEP 4 — START THE DATABASES (POSTGRES + NEO4J)
+----------------------------------------------------------------
+
+    docker compose up -d
+    docker compose ps
+
+  You should see both services healthy:
+    - postgres   localhost:5432
+    - neo4j      localhost:7474 (browser), localhost:7687 (Bolt)
+
+  The Neo4j browser at http://localhost:7474 is handy for
+  inspecting BloodHound data — login with neo4j / bloodhoundpass
+  (or whatever you set NEO4J_PASSWORD to).
+
+----------------------------------------------------------------
+ STEP 5 — APPLY DATABASE MIGRATIONS
+----------------------------------------------------------------
+
+    source .venv/bin/activate
+    alembic upgrade head
+
+  This creates the tables the agent writes to:
+    - pentest_sessions, task_nodes, hosts, vulnerabilities,
+      credentials, agent_decisions
+
+  From this point on, every shell where you run the engine must
+  have the venv active. Re-run `source .venv/bin/activate` in
+  each new terminal.
+
+----------------------------------------------------------------
+ STEP 6 — START THE METASPLOIT RPC DAEMON
+----------------------------------------------------------------
+
+  The metasploit wrapper talks to msfrpcd, which must be running.
+  Two ways to start it:
+
+  (a) One-shot in a terminal (good for first runs):
+
+        ./scripts/start_msfrpc.sh
+
+      Leave this terminal open; it stays in the foreground.
+
+  (b) As a systemd service (auto-starts on boot):
+
+        # Edit the unit file: replace REPLACE_WITH_YOUR_USER and
+        # REPLACE_WITH_REPO_ABSPATH with the right values.
+        nano scripts/msfrpcd.service
+
+        sudo cp scripts/msfrpcd.service /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl enable --now msfrpcd
+        sudo systemctl status msfrpcd
+
+  Verify it's listening:
+
+      ss -tlnp | grep 55553
+
+----------------------------------------------------------------
+ STEP 6B — START THE CALDERA SERVER
+----------------------------------------------------------------
+
+  CALDERA drives the `caldera` simulation tool: MITRE ATT&CK-mapped
+  adversary emulation and the purple-team telemetry consumed by the
+  paired P2-BLUE project. It is a required component of this project
+  (FYP brief section 1.1 Core Technologies and section 2.4 Tool
+  Stack), not an optional add-on.
+
+  setup_kali.sh already cloned + installed CALDERA into ./caldera,
+  pinned to release 5.3.0 from https://github.com/apache/caldera
+  (the project moved from mitre/ to apache/). It needs Python 3.10+,
+  which Kali rolling already provides.
+
+  Two ways to start it (mirrors the msfrpcd options above):
+
+  (a) One-shot in a terminal:
+
+        ./scripts/start_caldera.sh
+
+      Leave it running in the foreground. The script regenerates
+      caldera/conf/local.yml from .env on each start, so the red
+      API key it serves always matches CALDERA_API_KEY in .env.
+
+      The FIRST start is slow — it bundles the VueJS UI via npm.
+      Later starts reuse the cached build; to skip the build step
+      entirely once it exists: CALDERA_BUILD=0 ./scripts/start_caldera.sh
+
+  (b) As a systemd service (auto-starts on boot):
+
+        # Edit the unit: replace REPLACE_WITH_YOUR_USER and
+        # REPLACE_WITH_REPO_ABSPATH.
+        nano scripts/caldera.service
+
+        sudo cp scripts/caldera.service /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl enable --now caldera
+        sudo systemctl status caldera
+
+  Verify it's listening (default port 8888):
+
+      ss -tlnp | grep 8888
+      curl -s -H "KEY: $CALDERA_API_KEY" \
+           http://127.0.0.1:8888/api/v2/adversaries | head
+
+  Web UI: http://localhost:8888  — login red / admin
+
+----------------------------------------------------------------
+ STEP 6C — DEPLOY CALDERA AGENTS ONTO THE LAB TARGETS
+----------------------------------------------------------------
+
+  CALDERA does NOT exploit its way in. It only runs ability chains
+  through its own agents (sandcat), so each lab target you want it
+  to emulate against needs one installed. Until then the tool's
+  list_agents returns empty and operations have nothing to run on.
+
+  This is the one part of CALDERA that cannot be scripted from
+  here — it runs ON the target, not on Kali.
+
+  1. In the CALDERA UI, go to:  Agents -> Deploy an agent
+  2. Pick "Sandcat" and the target's platform (linux / windows).
+  3. Set the callback host to your KALI IP (not 127.0.0.1, or the
+     agent will call back to itself and never appear).
+  4. Copy the generated one-liner, run it ON the target VM.
+  5. The agent should appear in the Agents table within ~60s.
+
+  Reachability both ways matters: the target must reach Kali on
+  port 8888 for agent check-in. If agents never appear, test from
+  the target:  curl http://<KALI_IP>:8888
+
+  Order of operations in a session: use the engine's own tools
+  (nmap -> nuclei -> metasploit) to compromise a host first, then
+  install the sandcat agent on it, then let the agent drive
+  CALDERA in the objective phase for repeatable ATT&CK-mapped
+  emulation and blue-team telemetry.
+
+----------------------------------------------------------------
+ STEP 7 — (OPTIONAL) SMOKE-TEST WITH PYTEST
+----------------------------------------------------------------
+
+    pytest -v
+
+  All tests should pass. They mock the offensive binaries, so
+  failures here mean code/dependency problems, not lab issues.
+
+----------------------------------------------------------------
+ STEP 8 — RUN A SESSION
+----------------------------------------------------------------
+
+  Two ways to drive the agent:
+
+  (a) Command line — start a session against one target:
+
+        python main.py run --target 192.168.56.101 \
+                           --env env1 \
+                           --mode human_in_loop
+
+      Other CLI commands:
+
+        python main.py list                  # past sessions
+        python main.py tree <session_id>     # show the PTT
+        python main.py report <session_id>   # generate HTML report
+
+  (b) Web dashboard (recommended for human-in-the-loop):
+
+        uvicorn api.main:app --reload
+
+      Then open http://localhost:8000 in your browser. From the
+      dashboard you can:
+        - start sessions
+        - watch the PTT update live
+        - approve / reject the agent's proposed actions
+        - download generated reports
+
+----------------------------------------------------------------
+ OPERATION MODES
+----------------------------------------------------------------
+
+  autonomous       Agent executes every step it decides on, no
+                   human gate. Use for benchmarks.
+
+  human_in_loop    Every action is set to awaiting_approval and
+                   blocks until you approve/reject in the
+                   dashboard. Use for SOC training and demos.
+
+----------------------------------------------------------------
+ TARGET ENVIRONMENTS
+----------------------------------------------------------------
+
+  env1   192.168.56.0/24   Metasploitable 2/3, DVWA, Kioptrix
+  env2   10.10.0.0/16      50 VulnHub VMs
+  env3   10.20.0.0/16      GOAD Active Directory (requires VPN)
+
+  The agent will refuse any target outside ALLOWED_TARGET_RANGES
+  in .env.
+
+----------------------------------------------------------------
+ WHAT RUNS WHERE — QUICK PORT MAP
+----------------------------------------------------------------
+
+  5432    Postgres                 Docker
+  7474    Neo4j (HTTP browser)     Docker
+  7687    Neo4j (Bolt)             Docker — used by BloodHound
+  55553   Metasploit RPC           Kali host (msfrpcd)
+  8000    FastAPI dashboard        venv (uvicorn)
+  8888    CALDERA server           Kali host (server.py) — optional
+
+----------------------------------------------------------------
+ COMMON PROBLEMS
+----------------------------------------------------------------
+
+  - "docker: permission denied"
+      You haven't re-logged-in since being added to the docker
+      group. Run: newgrp docker
+
+  - "Cannot connect to msfrpcd"
+      Daemon not running. Re-check STEP 6.
+
+  - "Target out of scope"
+      The IP isn't covered by ALLOWED_TARGET_RANGES in .env.
+      Add the CIDR and restart the session.
+
+  - Anthropic 401 errors
+      ANTHROPIC_API_KEY in .env is wrong or empty.
+
+  - Neo4j 'Unauthorized'
+      NEO4J_PASSWORD in .env doesn't match the value baked into
+      docker-compose.yml. Pick one and align both, then:
+          docker compose down -v && docker compose up -d
+      (The -v wipes the Neo4j volume so the new password sticks.)
+
+  - "No module named ..."
+      You're not inside the venv. Run: source .venv/bin/activate
+
+  - CALDERA: "Connection refused" / caldera tool errors
+      The server isn't running. Start it (STEP 6B) and leave it up.
+
+  - CALDERA: 401 / 403 from the API
+      CALDERA_API_KEY in .env doesn't match the server's red key.
+      start_caldera.sh syncs them from .env — restart the server
+      after editing .env so it rewrites caldera/conf/local.yml.
+
+----------------------------------------------------------------
+ SAFETY
+----------------------------------------------------------------
+
+  This engine is designed for use against ISOLATED LAB VMs only.
+  Do NOT point it at any host you don't own or have explicit
+  written authorisation to test. See section 9 of the FYP brief.
+
+================================================================

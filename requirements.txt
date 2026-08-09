@@ -1,0 +1,40 @@
+# LLM / agent
+anthropic>=0.39.0
+# LangChain is optional — the ReAct loop in agent/core.py talks to the LLM
+# client directly and does not import LangChain at runtime. Kept here only for
+# experimentation / parity with the FYP brief's named tech stack.
+langchain>=0.3.0
+langchain-anthropic>=0.3.0
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+jinja2>=3.1.4
+
+# Database
+sqlalchemy>=2.0.36
+psycopg[binary]>=3.2.3
+alembic>=1.14.0
+
+# Tool integrations (subprocess-based wrappers don't need libs;
+# these are for tools that expose Python APIs)
+pymetasploit3>=1.0.6        # MSFRPC client
+impacket>=0.12.0            # AD attack toolkit
+python-libnmap>=0.7.3       # alternative nmap output parser
+pwncat-cs>=0.5.4            # post-exploit shell handler (CLI; subprocess-driven)
+bloodhound>=1.7.0           # bloodhound-python AD collector
+neo4j>=5.0.0                # Neo4j driver for BloodHound graph queries
+pywinrm>=0.4.3              # WinRM client for remote Rubeus execution
+
+# Utilities
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+structlog>=24.4.0
+httpx>=0.28.0
+
+# Dev / test
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+ruff>=0.8.0

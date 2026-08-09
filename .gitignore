@@ -1,0 +1,43 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Reports + artefacts
+artefacts/
+reports/output/
+*.pcap
+
+# Offensive-tool output (Kerberos tickets, BloodHound dumps)
+*.ccache
+*.kirbi
+bh_*/
+*_BloodHound.zip
+
+# Data / DB dumps
+*.sqlite
+*.db
+*.dump
+
+# CALDERA server (cloned + installed by setup_kali.sh into ./caldera)
+/caldera/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+#  Brief document
+*.docx
+AGENT.md

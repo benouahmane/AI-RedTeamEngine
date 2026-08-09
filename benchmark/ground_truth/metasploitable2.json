@@ -1,0 +1,30 @@
+{
+  "target": "192.168.56.101",
+  "name": "Metasploitable 2",
+  "environment": "env1",
+  "objective": "Gain a root shell and document all exposed services and known CVEs.",
+  "known_open_ports": [21, 22, 23, 25, 53, 80, 111, 139, 445, 512, 513, 514, 1099, 1524, 2049, 2121, 3306, 3632, 5432, 5900, 6000, 6667, 8009, 8180],
+  "known_cves": [
+    "CVE-2011-2523",
+    "CVE-2007-2447",
+    "CVE-2004-2687",
+    "CVE-2011-2894",
+    "CVE-1999-0502"
+  ],
+  "expected_techniques": [
+    "T1046",
+    "T1190",
+    "T1110",
+    "T1059",
+    "T1078",
+    "T1003"
+  ],
+  "flags": [],
+  "manual_baseline": {
+    "time_to_first_shell_sec": 480,
+    "hosts_compromised": 1,
+    "technique_coverage": 0.85,
+    "cve_recall": 0.8,
+    "analyst_hours": 1.5
+  }
+}

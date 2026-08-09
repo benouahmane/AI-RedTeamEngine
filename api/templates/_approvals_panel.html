@@ -1,0 +1,56 @@
+{% if nodes %}
+<p class="muted">{{ nodes|length }} action{{ 's' if nodes|length != 1 else '' }} awaiting your approval.</p>
+{% for n in nodes %}
+<div class="approval-card" data-node="{{ n.id }}">
+  <div class="approval-head">
+    <div>
+      <strong>{{ n.title }}</strong>
+      <span class="badge phase-{{ n.phase.value }}">{{ n.phase.value }}</span>
+      {% if n.mitre_ttp %}<span class="badge ttp">{{ n.mitre_ttp }}</span>{% endif %}
+      <span class="badge priority">P{{ n.priority }}</span>
+    </div>
+  </div>
+
+  {% if n.rationale %}
+  <p class="rationale"><em>{{ n.rationale }}</em></p>
+  {% endif %}
+
+  <div class="kv">
+    <span class="k">Tool:</span>
+    <code>{{ n.tool_name or '?' }}</code>
+  </div>
+  {% if n.target %}
+  <div class="kv">
+    <span class="k">Target:</span>
+    <code>{{ n.target }}</code>
+  </div>
+  {% endif %}
+
+  <details class="params-block">
+    <summary>Parameters (edit JSON to modify before approving)</summary>
+    <form class="approval-form"
+          hx-post="/api/approvals/{{ n.id }}/approve/html"
+          hx-target="#approvals-pane"
+          hx-swap="innerHTML">
+      <textarea name="tool_params_json"
+                rows="6"
+                spellcheck="false"
+                class="params">{{ n.tool_params|pretty_json }}</textarea>
+      <div class="approval-actions">
+        <button type="submit" class="primary">Approve</button>
+        <button type="button"
+                class="danger"
+                hx-post="/api/approvals/{{ n.id }}/reject/html"
+                hx-prompt="Reason for rejection?"
+                hx-target="#approvals-pane"
+                hx-swap="innerHTML">
+          Reject
+        </button>
+      </div>
+    </form>
+  </details>
+</div>
+{% endfor %}
+{% else %}
+<p class="muted empty">No actions awaiting approval.</p>
+{% endif %}

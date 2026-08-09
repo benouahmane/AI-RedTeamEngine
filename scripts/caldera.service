@@ -1,0 +1,16 @@
+[Unit]
+Description=MITRE CALDERA server for AI Red Team Engine
+After=network.target
+
+[Service]
+Type=simple
+# Edit the next two lines before installing — set them to the user that
+# owns the cloned repo and the absolute path to the clone.
+User=REPLACE_WITH_YOUR_USER
+WorkingDirectory=REPLACE_WITH_REPO_ABSPATH
+ExecStart=REPLACE_WITH_REPO_ABSPATH/scripts/start_caldera.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

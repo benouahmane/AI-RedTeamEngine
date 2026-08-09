@@ -1,0 +1,189 @@
+
+<div class="panel" data-session="{{ session.id }}">
+
+  <header class="panel-header">
+    <h2>
+      {{ session.name }}
+      <span class="badge status-{{ session.status.value }}">{{ session.status.value }}</span>
+      <span class="badge mode-{{ session.mode.value }}">{{ session.mode.value }}</span>
+    </h2>
+    <div class="meta">
+      <span><strong>Target:</strong> <code>{{ session.target }}</code></span>
+      <span><strong>Env:</strong> {{ session.environment }}</span>
+      {% if session.started_at %}
+      <span><strong>Started:</strong> {{ session.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+      {% endif %}
+      {% if session.completed_at %}
+      <span><strong>Ended:</strong> {{ session.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+      {% endif %}
+    </div>
+    {% if session.objective %}
+    <p class="objective">{{ session.objective }}</p>
+    {% endif %}
+
+    <div class="actions">
+      <button class="primary"
+              hx-post="/api/sessions/{{ session.id }}/start/html"
+              hx-target="#selected-panel"
+              hx-swap="innerHTML"
+              {% if session.status.value == 'running' %}disabled{% endif %}>
+        Start agent
+      </button>
+      <button class="secondary"
+              hx-post="/api/sessions/{{ session.id }}/abort/html"
+              hx-target="#selected-panel"
+              hx-swap="innerHTML"
+              hx-confirm="Abort the running session?"
+              {% if session.status.value in ('completed', 'aborted') %}disabled{% endif %}>
+        Abort
+      </button>
+      <a class="btn-link"
+         href="/api/reports/{{ session.id }}/render"
+         target="_blank">View report</a>
+      {% if report_saved %}
+      <a class="btn-link"
+         href="/api/reports/{{ session.id }}/download">Download saved</a>
+      {% endif %}
+      <button class="secondary"
+              hx-post="/api/sessions/{{ session.id }}/save-report/html"
+              hx-target="#selected-panel"
+              hx-swap="innerHTML">
+        {% if report_saved %}Re-save{% else %}Save report{% endif %}
+      </button>
+      <button class="secondary"
+              hx-get="/api/sessions/{{ session.id }}/panel"
+              hx-target="#selected-panel"
+              hx-swap="innerHTML">
+        Refresh
+      </button>
+    </div>
+
+    <div class="stats">
+      <span><strong>{{ hosts|length }}</strong> hosts</span>
+      <span><strong>{{ vulnerabilities|length }}</strong> vulnerabilities</span>
+      <span><strong>{{ credentials|length }}</strong> credentials</span>
+      <span><strong>{{ decisions|length }}</strong> recent decisions</span>
+    </div>
+  </header>
+
+  <div class="panel-grid">
+
+    <div class="card">
+      <h3>Pentest Task Tree</h3>
+      <div hx-get="/api/sessions/{{ session.id }}/tree/html"
+           hx-trigger="load, every 3s"
+           hx-swap="innerHTML">
+        <pre class="tree">{{ tree }}</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Pending approvals (Mode B)</h3>
+      <div id="approvals-pane"
+           hx-get="/api/approvals/{{ session.id }}/html"
+           hx-trigger="load, every 2s"
+           hx-swap="innerHTML">
+        <p class="muted">Loading…</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card findings">
+    <h3>Findings</h3>
+
+    <details {% if hosts %}open{% endif %}>
+      <summary><strong>Hosts</strong> ({{ hosts|length }})</summary>
+      {% if hosts %}
+      <table>
+        <thead>
+          <tr><th>IP</th><th>Hostname</th><th>OS</th><th>Open ports</th><th>Compromised</th></tr>
+        </thead>
+        <tbody>
+          {% for h in hosts %}
+          <tr>
+            <td><code>{{ h.ip }}</code></td>
+            <td>{{ h.hostname or '—' }}</td>
+            <td>{{ h.os_fingerprint or '—' }}</td>
+            <td>
+              {% for p in h.ports %}{{ p.port }}/{{ p.protocol|default('tcp') }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </td>
+            <td>{{ '✓' if h.is_compromised else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">None yet.</p>{% endif %}
+    </details>
+
+    <details {% if vulnerabilities %}open{% endif %}>
+      <summary><strong>Vulnerabilities</strong> ({{ vulnerabilities|length }})</summary>
+      {% if vulnerabilities %}
+      <table>
+        <thead>
+          <tr><th>Severity</th><th>CVE</th><th>Title</th><th>Host</th><th>MITRE</th><th>Exploited</th></tr>
+        </thead>
+        <tbody>
+          {% for v in vulnerabilities %}
+          <tr>
+            <td><span class="badge sev-{{ v.severity }}">{{ v.severity }}</span></td>
+            <td><code>{{ v.cve or '—' }}</code></td>
+            <td>{{ v.title }}</td>
+            <td><code>{{ v.host_ip }}</code></td>
+            <td>{{ v.mitre_ttp or '—' }}</td>
+            <td>{{ '✓' if v.exploited else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">None yet.</p>{% endif %}
+    </details>
+
+    <details {% if credentials %}open{% endif %}>
+      <summary><strong>Credentials</strong> ({{ credentials|length }})</summary>
+      {% if credentials %}
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Type</th><th>Host</th><th>Service</th><th>Privilege</th></tr>
+        </thead>
+        <tbody>
+          {% for c in credentials %}
+          <tr>
+            <td><code>{{ c.username }}</code></td>
+            <td>{{ c.secret_type }}</td>
+            <td><code>{{ c.host_ip or '—' }}</code></td>
+            <td>{{ c.service or '—' }}</td>
+            <td>{{ c.privilege or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">None yet.</p>{% endif %}
+    </details>
+
+    <details>
+      <summary><strong>Recent decisions</strong> ({{ decisions|length }})</summary>
+      {% if decisions %}
+      <table>
+        <thead>
+          <tr><th>#</th><th>Action</th><th>Tool</th><th>Result</th><th>Approver</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          {% for d in decisions %}
+          <tr>
+            <td>{{ d.step_number }}</td>
+            <td>{{ d.proposed_action.get('action', '—') if d.proposed_action else '—' }}</td>
+            <td>{{ d.proposed_action.get('tool_name', '—') if d.proposed_action else '—' }}</td>
+            <td>{{ d.result_summary.get('status', '—') if d.result_summary else '—' }}</td>
+            <td>{{ d.approved_by or 'auto' }}</td>
+            <td class="muted">{{ d.created_at.strftime('%H:%M:%S') if d.created_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">None yet.</p>{% endif %}
+    </details>
+
+  </div>
+
+</div>

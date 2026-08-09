@@ -1,0 +1,33 @@
+{% if sessions %}
+<table class="sessions-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Target</th>
+      <th>Env</th>
+      <th>Mode</th>
+      <th>Status</th>
+      <th>Started</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sessions %}
+    <tr class="session-row"
+        hx-get="/api/sessions/{{ s.id }}/panel"
+        hx-target="#selected-panel"
+        hx-swap="innerHTML"
+        hx-trigger="click"
+        title="Click to open this session">
+      <td><strong>{{ s.name }}</strong></td>
+      <td><code>{{ s.target }}</code></td>
+      <td>{{ s.environment }}</td>
+      <td><span class="badge mode-{{ s.mode.value }}">{{ s.mode.value }}</span></td>
+      <td><span class="badge status-{{ s.status.value }}">{{ s.status.value }}</span></td>
+      <td class="muted">{{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No sessions yet. Use the form on the right to create one.</p>
+{% endif %}
