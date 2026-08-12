@@ -71,6 +71,17 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# pwncat-cs is driven as a CLI subprocess by tools/post_exploit/pwncat.py, so it
+# only needs to be on PATH. It is NOT installed into .venv: it pins
+# packaging<21.0, which is unsolvable against the engine's modern dependencies.
+# pipx gives it its own isolated environment.
+if ! command -v pwncat-cs >/dev/null 2>&1; then
+    echo "--- Installing pwncat-cs (isolated, via pipx) ---"
+    sudo apt install -y pipx
+    pipx install pwncat-cs
+    pipx ensurepath
+fi
+
 echo "--- [6/7] Bootstrapping local config ---"
 if [ ! -f .env ]; then
     cp .env.example .env

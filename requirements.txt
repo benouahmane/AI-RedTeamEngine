@@ -1,10 +1,10 @@
 # LLM / agent
 anthropic>=0.39.0
-# LangChain is optional — the ReAct loop in agent/core.py talks to the LLM
-# client directly and does not import LangChain at runtime. Kept here only for
-# experimentation / parity with the FYP brief's named tech stack.
-langchain>=0.3.0
-langchain-anthropic>=0.3.0
+# NOTE: LangChain is deliberately NOT a dependency. The ReAct loop in
+# agent/core.py talks to the provider API directly and never imports it — see
+# ARCHITECTURE.md "Design pattern". Installing it also makes the dependency set
+# unsolvable: langchain-core pins packaging>=23.2 while pwncat-cs pins
+# packaging<21.0.
 
 # Web framework
 fastapi>=0.115.0
@@ -22,7 +22,10 @@ alembic>=1.14.0
 pymetasploit3>=1.0.6        # MSFRPC client
 impacket>=0.12.0            # AD attack toolkit
 python-libnmap>=0.7.3       # alternative nmap output parser
-pwncat-cs>=0.5.4            # post-exploit shell handler (CLI; subprocess-driven)
+# pwncat-cs is NOT listed here on purpose. tools/post_exploit/pwncat.py drives
+# it as a subprocess (argv = ["pwncat-cs"]), so it only needs to be on PATH.
+# It pins packaging<21.0, which would drag the whole venv back to 2021-era
+# libraries. setup_kali.sh installs it isolated via pipx instead.
 bloodhound>=1.7.0           # bloodhound-python AD collector
 neo4j>=5.0.0                # Neo4j driver for BloodHound graph queries
 pywinrm>=0.4.3              # WinRM client for remote Rubeus execution
