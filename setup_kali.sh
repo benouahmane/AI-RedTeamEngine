@@ -19,7 +19,10 @@ echo "--- [2/7] Installing Python, Docker, build tools ---"
 sudo apt install -y \
     python3 python3-pip python3-venv \
     libpq-dev build-essential git \
-    docker.io docker-compose
+    docker.io docker-compose \
+    libxml2-dev libxslt1-dev zlib1g-dev
+# libxml2-dev/libxslt1-dev/zlib1g-dev: CALDERA pins lxml~=4.9.1, which ships no
+# wheel for Python 3.13, so pip builds it from source and needs these headers.
 
 echo "--- [3/7] Installing offensive security tooling ---"
 sudo apt install -y \
