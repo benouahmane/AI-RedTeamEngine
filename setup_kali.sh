@@ -121,7 +121,17 @@ install_caldera() {
         python3 -m venv caldera/.venv || return 1
     fi
     caldera/.venv/bin/pip install --upgrade pip || return 1
-    caldera/.venv/bin/pip install -r caldera/requirements.txt || return 1
+
+    # CALDERA 5.3.0 pins lxml~=4.9.1, which has no wheel for Python 3.13 and
+    # cannot be compiled from source on current Kali: 4.9.x predates both the
+    # CPython 3.13 _PyInterpreterState_GetConfig change and the libxml2 2.12+
+    # xmlStructuredErrorFunc signature change (Kali ships libxml2 2.15). Relax
+    # that one pin to a release with a prebuilt cp313 wheel; the rest of the
+    # pins are honoured as-is.
+    CALDERA_REQS=$(mktemp)
+    sed 's/^lxml~=.*/lxml>=5.3/' caldera/requirements.txt > "$CALDERA_REQS" || return 1
+    caldera/.venv/bin/pip install -r "$CALDERA_REQS" || { rm -f "$CALDERA_REQS"; return 1; }
+    rm -f "$CALDERA_REQS"
     echo "    CALDERA $CALDERA_TAG installed."
 }
 if install_caldera; then
