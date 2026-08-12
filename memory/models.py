@@ -66,6 +66,22 @@ class OperationMode(str, enum.Enum):
     HUMAN_IN_LOOP = "human_in_loop"
 
 
+def pg_enum(python_enum: type[enum.Enum]) -> SAEnum:
+    """Column type that stores an enum's VALUE, not its member name.
+
+    SQLAlchemy defaults to persisting `.name` ("HUMAN_IN_LOOP"), but the Postgres
+    types created in migrations/versions/0001_initial_schema.py hold the lowercase
+    values ("human_in_loop"), so the default raises InvalidTextRepresentation on
+    every insert. `values_callable` makes both sides agree.
+
+    Always use this instead of SAEnum(...) directly for these enums.
+    """
+    return SAEnum(
+        python_enum,
+        values_callable=lambda members: [m.value for m in members],
+    )
+
+
 # Use JSONB on Postgres, fall back to JSON elsewhere (tests, sqlite).
 JsonCol = JSONB().with_variant(JSON(), "sqlite")
 
@@ -86,9 +102,9 @@ class PentestSession(Base):
     name: Mapped[str] = mapped_column(String(200))
     target: Mapped[str] = mapped_column(String(500))            # CIDR, IP, or hostname
     environment: Mapped[str] = mapped_column(String(50))         # env1 | env2 | env3
-    mode: Mapped[OperationMode] = mapped_column(SAEnum(OperationMode))
+    mode: Mapped[OperationMode] = mapped_column(pg_enum(OperationMode))
     status: Mapped[SessionStatus] = mapped_column(
-        SAEnum(SessionStatus), default=SessionStatus.INITIALISING
+        pg_enum(SessionStatus), default=SessionStatus.INITIALISING
     )
     objective: Mapped[str | None] = mapped_column(Text)
     rules_of_engagement: Mapped[dict[str, Any]] = mapped_column(JsonCol, default=dict)
@@ -139,10 +155,10 @@ class TaskNode(Base):
 
     title: Mapped[str] = mapped_column(String(500))
     rationale: Mapped[str | None] = mapped_column(Text)         # why the agent added this node
-    phase: Mapped[AttackPhase] = mapped_column(SAEnum(AttackPhase))
+    phase: Mapped[AttackPhase] = mapped_column(pg_enum(AttackPhase))
     mitre_ttp: Mapped[str | None] = mapped_column(String(50))    # e.g. "T1046"
 
-    status: Mapped[NodeStatus] = mapped_column(SAEnum(NodeStatus), default=NodeStatus.PENDING)
+    status: Mapped[NodeStatus] = mapped_column(pg_enum(NodeStatus), default=NodeStatus.PENDING)
     priority: Mapped[int] = mapped_column(Integer, default=3)    # 1 (low) – 5 (critical)
     depth: Mapped[int] = mapped_column(Integer, default=0)
 
