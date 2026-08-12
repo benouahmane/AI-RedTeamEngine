@@ -167,7 +167,20 @@ class OpenRouterClient:
         payload = resp.json()
 
         choices = payload.get("choices") or []
-        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        message = choices[0].get("message") or {} if choices else {}
+        # `content` is regularly present-but-null rather than absent, so a
+        # dict.get default never fires. Reasoning models put their output in
+        # `reasoning` instead, so try that before treating the reply as empty.
+        text = message.get("content") or message.get("reasoning") or ""
+        if not text.strip():
+            finish = choices[0].get("finish_reason") if choices else None
+            raise RuntimeError(
+                f"{payload.get('model') or self.model} returned an empty response "
+                f"(finish_reason={finish!r}). 'length' means it hit max_tokens "
+                f"({body['max_tokens']}) before emitting an action — raise it or "
+                f"pick a less verbose model. Otherwise the model may be unsuited "
+                f"to the agent loop; try OPENROUTER_JSON_MODE=true first."
+            )
         usage = payload.get("usage") or {}
         return LLMResponse(
             decision=_parse_json_action(text),
@@ -207,9 +220,9 @@ def get_llm_client(role: str = "planner") -> LLMClient:
     )
 
 
-def _parse_json_action(text: str) -> dict[str, Any]:
+def _parse_json_action(text: str | None) -> dict[str, Any]:
     """Extract the JSON object the model returned. Tolerant of fenced code blocks."""
-    text = text.strip()
+    text = (text or "").strip()
     if text.startswith("```"):
         # strip ```json ... ```
         text = text.strip("`")
