@@ -1,6 +1,6 @@
 # AI Red Team Engine
 
-Autonomous penetration testing framework - a ReAct-style agent driving offensive security tools against isolated lab environments. The reasoning loop is implemented directly against the Anthropic/Ollama API (no LangChain runtime dependency); see `agent/core.py`.
+Autonomous penetration testing framework - a ReAct-style agent driving offensive security tools against isolated lab environments. The reasoning loop is implemented directly against the provider API (no LangChain runtime dependency); see `agent/core.py`. Two providers are supported via `LLM_PROVIDER`: `anthropic` (default) and `openrouter` (many vendors behind one key, for benchmark comparisons).
 
 > **Lab use only.** This system is designed exclusively for authorised testing in isolated environments. Never point it at a host you do not own or have explicit written authorisation to test.
 

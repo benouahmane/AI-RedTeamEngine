@@ -19,8 +19,16 @@ class Settings(BaseSettings):
     anthropic_planner_model: str | None = None
     anthropic_parser_model: str | None = None
 
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:70b"
+    # OpenRouter gateway — used for cross-vendor benchmark runs (FYP D5).
+    openrouter_api_key: str | None = None
+    openrouter_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "qwen/qwen3.8-max"
+    # Explicit cache breakpoint on the system prompt. Required by vendors that
+    # don't cache automatically; harmless to leave off if they do.
+    openrouter_cache_system: bool = False
+    # Ask for guaranteed-JSON output. Not honoured by every model/provider.
+    openrouter_json_mode: bool = False
+    openrouter_referer: str = "https://github.com/TheRamiB/AI-RedTeamEngine"
 
     msf_rpc_host: str = "127.0.0.1"
     msf_rpc_port: int = 55553

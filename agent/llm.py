@@ -1,10 +1,11 @@
 """LLM client abstraction.
 
 Supports two providers — Anthropic (default, with prompt caching on the
-system prompt + tool catalogue) and Ollama (local, for air-gapped labs).
+system prompt + tool catalogue) and OpenRouter (gateway to many vendors,
+used for cross-model benchmark runs).
 
-The agent only uses the `propose_action(context)` method which always
-returns a typed `AgentDecision`.
+Every client implements `complete(system_prompt, user_prompt)` and returns a
+typed `LLMResponse` carrying the parsed JSON action and token usage.
 """
 from __future__ import annotations
 
@@ -24,6 +25,8 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-4-8":           (15.00, 75.00),
     "claude-sonnet-4-6":         (3.00, 15.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # OpenRouter-routed models (ids carry a `vendor/` prefix).
+    "qwen/qwen3.8-max":          (2.00, 6.00),
 }
 
 
@@ -98,38 +101,82 @@ class AnthropicClient:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Ollama (local)
+# OpenRouter (gateway — one key, many vendors; OpenAI-compatible API)
 # ────────────────────────────────────────────────────────────────────────────
 
 
-class OllamaClient:
+class OpenRouterClient:
+    """OpenRouter gateway, for benchmarking the agent across vendors (FYP D5).
+
+    Keep `LLM_PROVIDER=anthropic` for the runs that produce assessment reports —
+    the Claude API is the orchestration stack named in the brief. This client
+    exists so the same target can be re-run under a different model and scored
+    with `python main.py benchmark`.
+
+    Two behaviours are opt-in because provider support varies:
+
+    * `OPENROUTER_CACHE_SYSTEM` — sends the system prompt as a content block
+      with a `cache_control` breakpoint. Needed by vendors that require an
+      explicit marker (Anthropic models routed through OpenRouter); others cache
+      automatically. The system prompt carries the ~35k-char tool catalogue and
+      is stable for a whole session, so getting this right dominates cost.
+    * `OPENROUTER_JSON_MODE` — asks for a guaranteed-JSON response. Not every
+      model/provider honours `response_format`; enable it if
+      `_parse_json_action` starts raising on malformed output.
+    """
+
     def __init__(self, model: str | None = None, host: str | None = None) -> None:
-        self.host = host or settings.ollama_host
-        self.model = model or settings.ollama_model
+        if not settings.openrouter_api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is not set in .env")
+        self.host = (host or settings.openrouter_url).rstrip("/")
+        self.model = model or settings.openrouter_model
 
     def complete(self, system_prompt: str, user_prompt: str) -> LLMResponse:
+        system_content: Any = system_prompt
+        if settings.openrouter_cache_system:
+            system_content = [{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }]
+
+        body: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if settings.openrouter_json_mode:
+            body["response_format"] = {"type": "json_object"}
+
         resp = httpx.post(
-            f"{self.host}/api/chat",
-            json={
-                "model": self.model,
-                "stream": False,
-                "format": "json",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+            f"{self.host}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Content-Type": "application/json",
+                # Attribution headers OpenRouter shows on its activity dashboard.
+                "HTTP-Referer": settings.openrouter_referer,
+                "X-Title": "AI Red Team Engine",
             },
+            json=body,
             timeout=300,
         )
         resp.raise_for_status()
-        body = resp.json()
-        text = body.get("message", {}).get("content", "")
+        payload = resp.json()
+
+        choices = payload.get("choices") or []
+        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        usage = payload.get("usage") or {}
         return LLMResponse(
             decision=_parse_json_action(text),
             raw_text=text,
-            input_tokens=body.get("prompt_eval_count"),
-            output_tokens=body.get("eval_count"),
-            model=self.model,
+            input_tokens=usage.get("prompt_tokens"),
+            output_tokens=usage.get("completion_tokens"),
+            # Echo back the id the gateway actually served, so cost accounting
+            # and the benchmark record the real model, not the requested one.
+            model=payload.get("model") or self.model,
         )
 
 
@@ -144,15 +191,20 @@ def get_llm_client(role: str = "planner") -> LLMClient:
     `role="planner"` uses the stronger reasoning model (tool selection, attack
     planning); `role="parser"` uses the cheaper model for high-volume output
     interpretation. Both fall back to a single configured model when the
-    role-specific overrides aren't set, and Ollama ignores the distinction.
+    role-specific overrides aren't set.
     """
     provider = settings.llm_provider.lower()
     if provider == "anthropic":
         model = settings.parser_model if role == "parser" else settings.planner_model
         return AnthropicClient(model=model)
-    if provider == "ollama":
-        return OllamaClient()
-    raise ValueError(f"Unknown LLM_PROVIDER: {settings.llm_provider}")
+    if provider == "openrouter":
+        # Single model for both roles — benchmark comparisons are only
+        # meaningful when one model handles the whole session.
+        return OpenRouterClient()
+    raise ValueError(
+        f"Unknown LLM_PROVIDER: {settings.llm_provider!r} — expected "
+        f"'anthropic' or 'openrouter'"
+    )
 
 
 def _parse_json_action(text: str) -> dict[str, Any]:

@@ -5,7 +5,7 @@ operation see `INSTRUCTIONS.txt`; this document covers how the system is built
 and how to extend it.
 
 **Stack:** Python 3.11, FastAPI, PostgreSQL, SQLAlchemy, Jinja2, Anthropic
-Claude API (or Ollama for air-gapped labs).
+Claude API (or any model reachable through OpenRouter).
 
 **Paired project:** CTM-FYP-2025-P2-BLUE (Blue Team Defence Engine). The two
 form a purple team training range — this engine generates the attack telemetry
@@ -269,7 +269,17 @@ The output schema is fixed: update the template if model fields change.
 -> LLMResponse`.
 
 - **anthropic** — official SDK, prompt caching on the system prompt.
-- **ollama** — local models over HTTP, for air-gapped labs.
+- **openrouter** — gateway to many vendors over an OpenAI-compatible API.
+  Added so the same target can be re-run under a different model and scored
+  (FYP D5). Two opt-in settings cover provider variation:
+  `OPENROUTER_CACHE_SYSTEM` sends the system prompt with an explicit
+  `cache_control` breakpoint (some vendors need it, others cache
+  automatically), and `OPENROUTER_JSON_MODE` requests guaranteed-JSON output
+  for models that otherwise wrap their answer in prose.
+
+The system prompt is ~35k characters and is re-sent every step, so whether
+caching engages is the largest single factor in session cost — larger than the
+choice of model. Verify it on the provider's dashboard after a first run.
 
 **Model routing:** `get_llm_client(role=...)` sends planning to
 `ANTHROPIC_PLANNER_MODEL` and high-volume output parsing to

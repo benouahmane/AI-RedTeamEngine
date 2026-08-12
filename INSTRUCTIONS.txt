@@ -116,7 +116,11 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   Everything else has working defaults that match this guide:
 
-    LLM_PROVIDER             "anthropic" or "ollama"
+    LLM_PROVIDER             "anthropic" or "openrouter"
+                             openrouter = one key, many vendors; set
+                             OPENROUTER_API_KEY + OPENROUTER_MODEL.
+                             Intended for cross-model benchmark runs —
+                             see CHOOSING AN LLM PROVIDER below.
     ANTHROPIC_MODEL          default: claude-sonnet-4-6
     NEO4J_PASSWORD           must match docker-compose.yml
     CALDERA_API_KEY          must match the CALDERA server (STEP 6B)
@@ -126,6 +130,45 @@ running on a fresh Kali Linux VM. Follow the sections in order.
   editing it, stop the running engine/dashboard and relaunch —
   starting a new session inside the same process will not pick up
   the change.
+
+----------------------------------------------------------------
+ CHOOSING AN LLM PROVIDER
+----------------------------------------------------------------
+
+  The engine supports two. Only the key and model differ — the
+  agent itself is identical in both cases.
+
+  anthropic   (default, recommended)
+      ANTHROPIC_API_KEY=sk-ant-...
+      ANTHROPIC_MODEL=claude-sonnet-4-6
+      The orchestration stack named in the FYP brief (section 2.1).
+      Prompt caching is handled automatically. Use this for the runs
+      that produce your assessment reports.
+
+  openrouter  (for benchmark comparisons)
+      OPENROUTER_API_KEY=sk-or-...
+      OPENROUTER_MODEL=qwen/qwen3.8-max
+      One key, many vendors. Added so the same target can be re-run
+      under a different model and scored, which is what turns D5 into
+      a measured comparison instead of a citation.
+
+  COST — roughly, for one complete Metasploitable 2 run (~60 steps):
+      claude-sonnet-4-6   ~ $1.00
+      qwen/qwen3.8-max    ~ $0.60
+  Both rise to about $3.34 / $2.00 if a session runs to the
+  MAX_AGENT_STEPS ceiling of 200. LLM cost is not a constraint on
+  this project; reliability matters more than the price difference.
+
+  The system prompt carries the ~35k-character tool catalogue and is
+  re-sent every step, so whether prompt caching engages changes cost
+  by roughly 2.5x — more than the choice of model does. Anthropic
+  handles this automatically. On OpenRouter, run once, check the
+  dashboard, and set OPENROUTER_CACHE_SYSTEM=true if cached tokens
+  are not being billed at the cheaper rate.
+
+  KEEP ONE MODEL PER BENCHMARK COMPARISON. Scoring one target with
+  one model and another target with a different model compares the
+  models, not the targets, and the numbers become meaningless.
 
 ----------------------------------------------------------------
  STEP 4 — START THE DATABASES (POSTGRES + NEO4J)
@@ -465,6 +508,23 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   - Anthropic 401 errors
       ANTHROPIC_API_KEY in .env is wrong or empty.
+
+  - "OPENROUTER_API_KEY is not set in .env"
+      You set LLM_PROVIDER=openrouter without the matching key.
+
+  - OpenRouter 401 / 402
+      401 = bad key. 402 = out of credits; top up at openrouter.ai.
+
+  - "LLM returned malformed JSON"
+      The model wrapped its answer in prose instead of returning a
+      bare JSON object. On OpenRouter, set OPENROUTER_JSON_MODE=true.
+      If it persists, the model is a poor fit for the agent loop —
+      switch back to LLM_PROVIDER=anthropic.
+
+  - Benchmark cost column reads $0.00
+      estimate_cost_usd() returns 0.0 for models missing from
+      MODEL_PRICING in agent/llm.py. Add the model's per-1M input
+      and output prices there.
 
   - Neo4j 'Unauthorized'
       NEO4J_PASSWORD in .env doesn't match the value baked into
