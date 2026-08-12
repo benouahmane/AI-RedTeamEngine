@@ -29,25 +29,35 @@ depends_on = None
 
 # ────────────────────────────────────────────────────────────────────────────
 # Enum types — defined as Postgres ENUMs so Alembic can drop them on rollback
+#
+# create_type=False is required. These types are created once, explicitly, at
+# the top of upgrade(). Without the flag SQLAlchemy also emits CREATE TYPE from
+# each create_table() that references one — and Alembic drives that path with
+# checkfirst=False, so the second emission raises DuplicateObject instead of
+# being skipped. The explicit .create()/.drop() calls below are unaffected.
 # ────────────────────────────────────────────────────────────────────────────
 
-attack_phase = sa.Enum(
+attack_phase = postgresql.ENUM(
     "recon", "enumeration", "vuln_id", "exploitation",
     "post_exploit", "lateral_movement", "objective",
     name="attackphase",
+    create_type=False,
 )
-node_status = sa.Enum(
+node_status = postgresql.ENUM(
     "pending", "in_progress", "completed", "failed", "skipped",
     "awaiting_approval", "rejected",
     name="nodestatus",
+    create_type=False,
 )
-session_status = sa.Enum(
+session_status = postgresql.ENUM(
     "initialising", "running", "paused", "completed", "aborted", "error",
     name="sessionstatus",
+    create_type=False,
 )
-operation_mode = sa.Enum(
+operation_mode = postgresql.ENUM(
     "autonomous", "human_in_loop",
     name="operationmode",
+    create_type=False,
 )
 
 
