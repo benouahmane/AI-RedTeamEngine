@@ -108,7 +108,10 @@ CALDERA_TAG="${CALDERA_TAG:-5.3.0}"
 install_caldera() {
     # Node is needed for `server.py --build`, which bundles the VueJS UI — the
     # UI is how you generate sandcat agent-deploy commands for the targets.
-    sudo apt install -y nodejs npm || return 1
+    # Go (>=1.19) is needed by the sandcat plugin, which compiles the agent
+    # binaries on demand; without it CALDERA logs "go does not meet the minimum
+    # version" and STEP 6C (deploying agents onto lab targets) cannot proceed.
+    sudo apt install -y nodejs npm golang-go || return 1
 
     if [ -d caldera/.git ]; then
         echo "    CALDERA already present at ./caldera — skipping clone."
@@ -132,6 +135,11 @@ install_caldera() {
     sed 's/^lxml~=.*/lxml>=5.3/' caldera/requirements.txt > "$CALDERA_REQS" || return 1
     caldera/.venv/bin/pip install -r "$CALDERA_REQS" || { rm -f "$CALDERA_REQS"; return 1; }
     rm -f "$CALDERA_REQS"
+
+    # Not in CALDERA's requirements.txt, but its `builder` plugin imports it and
+    # fails to load without it ("No module named 'docker'").
+    caldera/.venv/bin/pip install docker || return 1
+
     echo "    CALDERA $CALDERA_TAG installed."
 }
 if install_caldera; then
