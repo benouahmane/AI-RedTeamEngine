@@ -20,13 +20,14 @@ ENVIRONMENTS: dict[str, EnvironmentSpec] = {
     "env1": EnvironmentSpec(
         key="env1",
         name="Classic Vuln VMs",
-        network_cidr="192.168.56.0/24",
+        network_cidr="192.168.163.0/24",
         description="Metasploitable 2/3, DVWA, VulnOS, Kioptrix series. AI calibration baseline.",
         default_objective="Achieve root on every host and document each CVE exploited.",
+        # VMware host-only subnet. The brief quotes 192.168.56.0/24 (VirtualBox's
+        # default host-only range); this lab runs on VMware, which allocates
+        # 192.168.163.0/24. Keep this in sync with ALLOWED_TARGET_RANGES in .env.
         targets=[
-            "192.168.56.101",          # Metasploitable 2
-            "192.168.56.102",          # Metasploitable 3
-            "192.168.56.103",          # DVWA host
+            "192.168.163.131",         # Metasploitable 2
         ],
     ),
     "env2": EnvironmentSpec(
