@@ -530,6 +530,10 @@ def test_payload_choice_prefers_exact_interact_then_reverse() -> None:
     samba = ["cmd/unix/bind_awk", "cmd/unix/bind_netcat", "cmd/unix/reverse_netcat"]
     assert _pick_payload(samba) == "cmd/unix/reverse_netcat"
 
+    # The agent supplying LHOST/LPORT means it wants a reverse shell. Handing
+    # it `interact` made the wrapper reject its own LPORT as invalid.
+    assert _pick_payload(vsftpd, wants_callback=True) != "cmd/unix/interact"
+
     # Non-unix targets fall through to any reverse payload.
     win = ["windows/shell/bind_tcp", "windows/meterpreter/reverse_tcp"]
     assert _pick_payload(win) == "windows/meterpreter/reverse_tcp"
