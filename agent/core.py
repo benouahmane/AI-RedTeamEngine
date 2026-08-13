@@ -214,10 +214,14 @@ class RedTeamAgent:
             parent = roots.get(phase) or next(iter(roots.values()))
             node = task_tree.expand(self.db, parent, [spec])[0]
 
+        # `or {}` rather than a get() default: models routinely send an explicit
+        # "new_node": null when reusing an existing node, and a default only
+        # applies to a missing key.
+        new_node = decision.get("new_node") or {}
         proposed = {
-            "tool_name": node.tool_name or decision.get("new_node", {}).get("tool_name"),
-            "tool_params": node.tool_params or decision.get("new_node", {}).get("tool_params") or {},
-            "rationale": node.rationale or decision.get("new_node", {}).get("rationale"),
+            "tool_name": node.tool_name or new_node.get("tool_name"),
+            "tool_params": node.tool_params or new_node.get("tool_params") or {},
+            "rationale": node.rationale or new_node.get("rationale"),
         }
 
         # Safety: refuse out-of-scope targets

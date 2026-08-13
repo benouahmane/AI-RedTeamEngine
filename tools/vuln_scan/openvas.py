@@ -268,7 +268,7 @@ def _parse_report(root: ET.Element) -> dict[str, Any]:
 
         cves: list[str] = []
         for ref in result.findall(".//refs/ref"):
-            if ref.get("type", "").lower() == "cve":
+            if (ref.get("type") or "").lower() == "cve":
                 cve_id = ref.get("id")
                 if cve_id:
                     cves.append(cve_id)
