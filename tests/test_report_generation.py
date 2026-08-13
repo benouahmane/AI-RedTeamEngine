@@ -105,6 +105,33 @@ def test_render_handles_empty_session(db, pentest_session) -> None:
     assert "Informational" in html
 
 
+def test_decision_log_resolves_tool_from_reused_nodes(db, pentest_session) -> None:
+    """new_node is null when the agent reuses a node an expand_tree created,
+    which left Appendix B's Tool column blank for most of a run."""
+    roots = task_tree.bootstrap_phases(db, pentest_session)
+    exploit_root = next(r for r in roots if r.phase == AttackPhase.EXPLOITATION)
+    [node] = task_tree.expand(db, exploit_root, [{
+        "title": "Exploit Samba usermap_script",
+        "phase": AttackPhase.EXPLOITATION,
+        "mitre_ttp": "T1190",
+        "tool_name": "metasploit",
+    }])
+    task_tree.start(db, node)
+    task_tree.complete(db, node, command="msfrpc.exploit(...)", raw_output="",
+                       findings={})
+    db.add(AgentDecision(
+        session_id=pentest_session.id, task_node_id=node.id, step_number=3,
+        context={}, proposed_action={"action": "execute_tool",
+                                     "node_id": str(node.id), "new_node": None},
+        result_summary={"status": "success"},
+    ))
+    db.commit()
+
+    html = ReportGenerator().render_html(db, pentest_session)
+    rows = html.split("Appendix B")[1]
+    assert "metasploit" in rows
+
+
 def test_compromised_host_is_never_rated_informational(db, pentest_session) -> None:
     """The regression this guards: the engine rooted the target and the report
     still read '0 vulnerability findings / Informational'."""

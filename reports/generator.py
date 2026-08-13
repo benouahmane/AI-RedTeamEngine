@@ -111,6 +111,24 @@ class ReportGenerator:
         severity_counts = Counter(v.severity for v in vulns)
         risk_rating = self._risk_rating(severity_counts, compromised=bool(compromised))
 
+        # The tool a step ran lives on the node it ran, not in the decision
+        # JSON: `new_node` is null whenever the agent reused a node an earlier
+        # expand_tree created, which left the Appendix B column blank for over
+        # half of a typical run. Resolve through task_node_id first.
+        node_tools = {n.id: n.tool_name for n in nodes}
+        decision_rows = [
+            {
+                "step": d.step_number,
+                "action": (d.proposed_action or {}).get("action"),
+                "tool": node_tools.get(d.task_node_id)
+                        or ((d.proposed_action or {}).get("new_node") or {}).get("tool_name"),
+                "approved_by": d.approved_by,
+                "input_tokens": d.llm_input_tokens,
+                "output_tokens": d.llm_output_tokens,
+            }
+            for d in decisions
+        ]
+
         return {
             "session": session,
             "hosts": hosts,
@@ -119,6 +137,7 @@ class ReportGenerator:
             "credentials": creds,
             "narrative": completed,
             "decisions": decisions,
+            "decision_rows": decision_rows,
             "coverage": coverage,
             "severity_counts": dict(severity_counts),
             "risk_rating": risk_rating,

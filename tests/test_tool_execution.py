@@ -376,8 +376,12 @@ def fake_msfrpc(monkeypatch):
             return FakeMod()
 
     class FakeSessions:
+        # Sessions msfrpcd already holds. Defined inside the fixture, so each
+        # test gets a fresh class and cannot leak state into the next.
+        preset: dict = {}
+
         def __init__(self):
-            self.list = {}
+            self.list = dict(FakeSessions.preset)
 
         def session(self, sid):
             mock = MagicMock()
@@ -386,6 +390,8 @@ def fake_msfrpc(monkeypatch):
             return mock
 
     class FakeMsfRpcClient:
+        Sessions = FakeSessions          # so tests can preset the session map
+
         def __init__(self, *a, **kw):
             self.modules = FakeModules()
             self.sessions = FakeSessions()
@@ -396,6 +402,9 @@ def fake_msfrpc(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "pymetasploit3", fake_pkg)
     monkeypatch.setitem(sys.modules, "pymetasploit3.msfrpc", fake_msfrpc_mod)
+    # The inherited-session snapshot is process-global and taken once; without
+    # this reset it would leak between tests.
+    monkeypatch.setattr("tools.exploitation.metasploit._INHERITED_SESSIONS", None)
     yield FakeMsfRpcClient
 
 
@@ -419,6 +428,37 @@ def test_metasploit_session_list_empty(fake_msfrpc) -> None:
     result = tool.execute(action="session_list")
     assert result.status == ToolStatus.NO_FINDINGS
     assert result.findings["count"] == 0
+
+
+def test_metasploit_session_list_flags_inherited_sessions(fake_msfrpc) -> None:
+    """A shell left behind by a previous run must not read as this run's win.
+
+    msfrpcd outlives an engine run. The agent found a leftover session, used
+    it, and the report described a clean autonomous compromise for a run whose
+    every exploit returned session_id=null.
+    """
+    fake_msfrpc.Sessions.preset = {
+        "1": {"type": "shell", "session_port": 139,
+              "via_exploit": "exploit/multi/samba/usermap_script"},
+    }
+    tool = registry.get("metasploit")
+    result = tool.execute(action="session_list")
+
+    assert result.status == ToolStatus.SUCCESS
+    f = result.findings
+    assert f["count"] == 1
+    assert f["inherited_count"] == 1
+    assert f["opened_this_run"] == 0
+    assert f["sessions"][0]["inherited"] is True
+    assert "NOT evidence" in f["warning"]
+
+
+def test_metasploit_session_run_marks_inherited(fake_msfrpc) -> None:
+    fake_msfrpc.Sessions.preset = {"1": {"type": "shell"}}
+    tool = registry.get("metasploit")
+    result = tool.execute(action="session_run", session_id=1, command="id")
+    assert result.findings["inherited"] is True
+    assert result.findings["session_id"] == "1"
 
 
 def test_metasploit_exploit_requires_module(fake_msfrpc) -> None:

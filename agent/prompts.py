@@ -124,6 +124,13 @@ Treat this as ground truth and act on it:
     verify the foothold before treating the host as owned: run `id`/`whoami`
     (metasploit `session_run`, impacket `*exec` with `command`, or pwncat
     `exec`). Only then expand into post-exploitation on that host.
+  - Metasploit's `session_list` marks each session `inherited: true|false`.
+    An inherited session predates this engagement — it was left behind by an
+    earlier run. You may use it, but it does NOT mean your exploit worked, so
+    never treat it as one succeeding. If every exploit you ran returned
+    `session_id: null` and the only session is inherited, the exploits failed:
+    diagnose them (wrong RPORT, a payload that cannot call back) rather than
+    declaring initial access achieved.
 
 ## MITRE ATT&CK quick reference
 
