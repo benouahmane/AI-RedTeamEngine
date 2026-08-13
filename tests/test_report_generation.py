@@ -176,6 +176,11 @@ def test_evidence_table_clips_overflow(db, pentest_session) -> None:
     assert "overflow: hidden" in html
     # The old inline cap let overflow paint over the following rows.
     assert 'style="max-height:200px"' not in html
+    # Declared column widths — auto layout starved the findings column.
+    assert "table-layout: fixed" in html
+    assert "<colgroup>" in html
+    # `anywhere` shrinks min-content sizing and wraps every token in half.
+    assert "overflow-wrap: anywhere" not in html
 
 
 def test_write_persists_report_file(db, pentest_session, tmp_path) -> None:
