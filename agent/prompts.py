@@ -53,8 +53,8 @@ Schema:
 {
   "thought": "one paragraph: what the tree shows, what's logical next",
   "action": "execute_tool" | "expand_tree" | "skip_node" | "complete_session" | "abort",
-  "node_id": "<uuid of an existing pending node, or null to create a new one>",
-  "new_node": {
+  "node_id": "<uuid of an existing pending LEAF node, or null>",
+  "new_node": {   // REQUIRED when node_id is null; MUST be null when node_id is set
     "title": "short imperative description",
     "phase": "recon|enumeration|vuln_id|exploitation|post_exploit|lateral_movement|objective",
     "mitre_ttp": "Txxxx[.yyy]",
@@ -69,10 +69,21 @@ Schema:
 }
 ```
 
+Output exactly ONE JSON object and nothing else — no prose before or after it,
+no markdown fences, and no second "corrected" object. Decide, then emit once.
+
 Rules for `action`:
-  - `execute_tool`     → pick an existing pending `node_id` (preferred) or
-                         provide `new_node`. Engine runs the tool and reports
-                         results on the next step.
+  - `execute_tool`     → exactly one of these two, never both:
+                         (a) `node_id` = an existing pending node that ALREADY
+                             has a tool_name, with `new_node: null`. The node
+                             carries its own tool and params; you do not repeat
+                             them. Phase headings (Reconnaissance, Exploitation,
+                             …) are NOT executable — they have no tool. Only
+                             nodes listed with a tool qualify.
+                         (b) `node_id: null` plus a fully-populated `new_node`,
+                             including `tool_name` and `tool_params`. Use this
+                             whenever no pending node already does what you want.
+                         Engine runs the tool and reports results next step.
   - `expand_tree`      → don't run anything; just add planning nodes via
                          `expansion` (e.g. seed enumeration tasks once recon
                          finds open ports). The `node_id` field is the parent.
