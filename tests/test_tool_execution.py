@@ -469,17 +469,26 @@ def test_metasploit_exploit_requires_module(fake_msfrpc) -> None:
 
 
 def test_metasploit_module_metadata_pulls_cves() -> None:
-    """The vulnerability register needs the CVE, and msf already holds it."""
+    """The vulnerability register needs the CVE, and msf already holds it.
+
+    Shapes copied from a live pymetasploit3 ExploitModule: the info dict is
+    exposed as `.info`, NOT `.moduleinfo`. Reading the wrong name yielded {},
+    which put the module path in the register's Title column and left CVE null.
+    """
     from tools.exploitation.metasploit import _module_metadata
 
     class Mod:
-        moduleinfo = {
+        info = {
+            "type": "exploit",
             "name": 'Samba "username map script" Command Execution',
+            "fullname": "exploit/multi/samba/usermap_script",
+            "rank": "excellent",
+            "disclosuredate": "2007-05-14",
             "description": "  This module exploits a command execution vuln.  ",
-            "rank": 600,
             "references": [
                 ["CVE", "2007-2447"],
                 ["OSVDB", "34700"],
+                ["BID", "23972"],
                 ["URL", "https://example.test/advisory"],
             ],
         }
@@ -487,8 +496,48 @@ def test_metasploit_module_metadata_pulls_cves() -> None:
     meta = _module_metadata(Mod())
     assert meta["cves"] == ["CVE-2007-2447"]
     assert meta["module_name"].startswith("Samba")
+    assert meta["module_rank"] == "excellent"
+    assert meta["disclosure_date"] == "2007-05-14"
     assert meta["module_description"] == "This module exploits a command execution vuln."
     assert meta["references"] == ["https://example.test/advisory"]
+
+
+def test_metasploit_module_metadata_falls_back_to_properties() -> None:
+    """Builds without an info dict still expose name/description/references."""
+    from tools.exploitation.metasploit import _module_metadata
+
+    class Mod:
+        name = "UnrealIRCD 3.2.8.1 Backdoor Command Execution"
+        description = "Backdoored source tarball."
+        rank = "excellent"
+        references = [["CVE", "2010-2075"]]
+
+    meta = _module_metadata(Mod())
+    assert meta["cves"] == ["CVE-2010-2075"]
+    assert meta["module_name"].startswith("UnrealIRCD")
+
+
+def test_payload_choice_prefers_exact_interact_then_reverse() -> None:
+    """Substring matching picked generic/ssh/interact and bind_awk; both
+    launched a job and produced no session."""
+    from tools.exploitation.metasploit import _pick_payload
+
+    # vsftpd backdoor: `generic/ssh/interact` also contains "interact".
+    vsftpd = ["cmd/unix/interact", "generic/ssh/interact", "cmd/unix/bind_awk"]
+    assert _pick_payload(vsftpd) == "cmd/unix/interact"
+
+    # usermap_script: no interact payload — reverse must beat bind.
+    samba = ["cmd/unix/bind_awk", "cmd/unix/bind_netcat", "cmd/unix/reverse_netcat"]
+    assert _pick_payload(samba) == "cmd/unix/reverse_netcat"
+
+    # Non-unix targets fall through to any reverse payload.
+    win = ["windows/shell/bind_tcp", "windows/meterpreter/reverse_tcp"]
+    assert _pick_payload(win) == "windows/meterpreter/reverse_tcp"
+
+    # Bind only when nothing reverse exists, and never crash on an empty list.
+    assert _pick_payload(["cmd/unix/bind_awk"]) == "cmd/unix/bind_awk"
+    assert _pick_payload(["some/odd/payload"]) == "some/odd/payload"
+    assert _pick_payload([]) is None
 
 
 def test_metasploit_module_metadata_survives_missing_moduleinfo() -> None:
