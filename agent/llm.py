@@ -142,7 +142,7 @@ class OpenRouterClient:
 
         body: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": settings.openrouter_max_tokens,
             "messages": [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": user_prompt},

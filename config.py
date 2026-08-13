@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     openrouter_cache_system: bool = False
     # Ask for guaranteed-JSON output. Not honoured by every model/provider.
     openrouter_json_mode: bool = False
+    # Reasoning models spend most of their budget on chain-of-thought before
+    # emitting the action, and get truncated mid-thought at the 4096 default —
+    # which surfaces as "LLM returned malformed JSON" with prose in the dump.
+    # Raise this when routing to one.
+    openrouter_max_tokens: int = 4096
     openrouter_referer: str = "https://github.com/TheRamiB/AI-RedTeamEngine"
 
     msf_rpc_host: str = "127.0.0.1"
