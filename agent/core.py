@@ -224,6 +224,25 @@ class RedTeamAgent:
             "rationale": node.rationale or new_node.get("rationale"),
         }
 
+        # Reject before asking the human. Models sometimes point node_id at a
+        # phase root, which carries no tool — there is nothing to approve, and
+        # failing the root would strike out the entire phase. Bounce it back as
+        # a step error so the agent retries with a leaf node or a new_node.
+        if not proposed["tool_name"]:
+            err = (
+                f"node {node.id} ('{node.title}') has no tool attached — it is a "
+                f"phase/planning node. Pick a pending leaf node that has a tool, "
+                f"or supply new_node with tool_name and tool_params."
+            )
+            self.logger.log(
+                step_number=step_no, context=ctx, proposed_action=decision,
+                task_node_id=node.id, result_summary={"error": "no_tool_on_node"},
+                llm_model=llm_resp.model, llm_input_tokens=llm_resp.input_tokens,
+                llm_output_tokens=llm_resp.output_tokens,
+            )
+            return StepResult("execute_tool", node.id, ToolStatus.ERROR,
+                              {"error": "no_tool_on_node", "detail": err})
+
         # Safety: refuse out-of-scope targets
         target = (proposed["tool_params"] or {}).get("target") or node.target
         if target and not self._target_in_scope(target):
