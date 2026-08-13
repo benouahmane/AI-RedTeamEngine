@@ -58,6 +58,9 @@ class ReportGenerator:
         Raises RuntimeError with install guidance if none are present, rather
         than silently producing no PDF.
         """
+        # Absolute: as_uri() below rejects relative paths, and the converters
+        # are happier with full paths regardless of their working directory.
+        html_path = html_path.resolve()
         pdf_path = html_path.with_suffix(".pdf")
         # (binary, argv builder). weasyprint honours the stylesheet most
         # faithfully; the headless browsers are the common fallbacks.
