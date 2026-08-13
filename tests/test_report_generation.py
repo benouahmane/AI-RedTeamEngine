@@ -169,18 +169,36 @@ def test_findings_excerpt_is_capped() -> None:
     assert json.loads(excerpt(small)) == small
 
 
-def test_evidence_table_clips_overflow(db, pentest_session) -> None:
+def test_evidence_renders_as_blocks_not_table_rows(db, pentest_session) -> None:
+    """Five table columns could never give a 250-line JSON blob a usable width;
+    each task is now a full-width block."""
     _populate(db, pentest_session)
     html = ReportGenerator().render_html(db, pentest_session)
-    assert 'class="evidence"' in html
-    assert "overflow: hidden" in html
-    # The old inline cap let overflow paint over the following rows.
+
+    assert 'class="evidence-item"' in html
+    assert 'class="evidence-meta"' in html
+    assert "<h3>1. nmap full TCP scan</h3>" in html
+    assert "nmap -sV 192.168.56.101" in html
+    assert "T1046" in html
+    # The old inline cap let overflow paint over whatever followed.
     assert 'style="max-height:200px"' not in html
-    # Declared column widths — auto layout starved the findings column.
-    assert "table-layout: fixed" in html
-    assert "<colgroup>" in html
+    assert "overflow: hidden" in html
     # `anywhere` shrinks min-content sizing and wraps every token in half.
     assert "overflow-wrap: anywhere" not in html
+
+
+def test_register_columns_cannot_run_off_the_page(db, pentest_session) -> None:
+    """An unbreakable "192.168.163.131:21" pushed the table past 100% width and
+    the Exploited and MITRE columns printed off the edge of the page."""
+    _populate(db, pentest_session)
+    html = ReportGenerator().render_html(db, pentest_session)
+    register = html.split("5. Vulnerability Register")[1].split("<h2")[0]
+    assert "<colgroup>" in register
+    assert 'class="register"' in html
+    # Cells must be able to break, or fixed widths just overflow instead.
+    assert "vertical-align: top; overflow-wrap: break-word" in html
+    # Declared paper, or the converter's own margins narrow the page further.
+    assert "@page { size: A4;" in html
 
 
 def test_write_persists_report_file(db, pentest_session, tmp_path) -> None:
