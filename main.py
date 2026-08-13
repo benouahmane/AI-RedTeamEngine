@@ -118,8 +118,17 @@ def cmd_report(args: argparse.Namespace) -> int:
         if s is None:
             print(f"session {sid} not found", file=sys.stderr)
             return 1
-        path = ReportGenerator().write(db, s)
+        gen = ReportGenerator()
+        path = gen.write(db, s)
         print(f"Report written to {path}")
+        if getattr(args, "pdf", False):
+            try:
+                print(f"PDF written to {gen.write_pdf(path)}")
+            except Exception as exc:                                   # noqa: BLE001
+                # The HTML is already on disk and is the real artefact — a
+                # missing converter shouldn't fail the command.
+                print(f"PDF conversion failed: {exc}", file=sys.stderr)
+                return 1
     return 0
 
 
@@ -172,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p_report = sub.add_parser("report")
     p_report.add_argument("session_id")
+    p_report.add_argument("--pdf", action="store_true",
+                          help="also write a PDF alongside the HTML")
     p_report.set_defaults(func=cmd_report)
 
     args = parser.parse_args(argv)

@@ -12,6 +12,8 @@ Pulls every artefact required by FYP brief §3.3:
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -48,6 +50,46 @@ class ReportGenerator:
         out = self.output_dir / f"{session.id}.html"
         out.write_text(self.render_html(db, session), encoding="utf-8")
         return out
+
+    def write_pdf(self, html_path: Path) -> Path:
+        """Convert an already-rendered report to PDF.
+
+        Tries the converters Kali is likely to have, in order of output quality.
+        Raises RuntimeError with install guidance if none are present, rather
+        than silently producing no PDF.
+        """
+        pdf_path = html_path.with_suffix(".pdf")
+        # (binary, argv builder). weasyprint honours the stylesheet most
+        # faithfully; the headless browsers are the common fallbacks.
+        converters: list[tuple[str, list[str]]] = [
+            ("weasyprint", ["weasyprint", str(html_path), str(pdf_path)]),
+            ("wkhtmltopdf", ["wkhtmltopdf", "--enable-local-file-access",
+                             str(html_path), str(pdf_path)]),
+            ("chromium", ["chromium", "--headless", "--disable-gpu", "--no-sandbox",
+                          f"--print-to-pdf={pdf_path}", html_path.as_uri()]),
+            ("google-chrome", ["google-chrome", "--headless", "--disable-gpu",
+                               "--no-sandbox", f"--print-to-pdf={pdf_path}",
+                               html_path.as_uri()]),
+        ]
+        tried: list[str] = []
+        for binary, argv in converters:
+            if not shutil.which(binary):
+                continue
+            tried.append(binary)
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=180)
+            if proc.returncode == 0 and pdf_path.exists():
+                return pdf_path
+        if tried:
+            raise RuntimeError(
+                f"PDF conversion failed using {tried}. Last error: "
+                f"{proc.stderr.strip()[:400]}"                          # noqa: F821
+            )
+        raise RuntimeError(
+            "no HTML-to-PDF converter found. Install one:\n"
+            "    sudo apt install -y weasyprint      # best CSS fidelity\n"
+            "    sudo apt install -y wkhtmltopdf\n"
+            "…or open the HTML in a browser and print to PDF."
+        )
 
     # ─────────────────────────────────────────────────────────────────────
 
