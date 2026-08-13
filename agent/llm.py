@@ -234,12 +234,48 @@ def _parse_json_action(text: str | None) -> dict[str, Any]:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Fallback: find the first { ... } balanced block
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
+
+    # Fallback: scan for balanced top-level {...} blocks. first-brace-to-last-
+    # brace fails whenever the reply holds more than one object, which models do
+    # routinely — emitting an answer, reconsidering in prose, then emitting a
+    # corrected one. Take the LAST block that parses: that is the final answer.
+    candidates: list[str] = []
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start != -1:
+                candidates.append(text[start:i + 1])
+                start = -1
+            elif depth < 0:            # stray brace; resynchronise
+                depth = 0
+
+    for block in reversed(candidates):
         try:
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"LLM returned malformed JSON: {exc}\n---\n{text}") from exc
+            return json.loads(block)
+        except json.JSONDecodeError:
+            continue
+
+    if candidates:
+        raise ValueError(
+            f"LLM returned malformed JSON in all {len(candidates)} object(s) "
+            f"found:\n---\n{text}"
+        )
     raise ValueError(f"LLM response contained no JSON action:\n{text}")

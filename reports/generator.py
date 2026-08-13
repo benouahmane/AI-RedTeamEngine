@@ -107,12 +107,14 @@ class ReportGenerator:
         decisions = queries.decisions_for(db, session.id)
         coverage = build_coverage_matrix(db, session.id)
 
+        compromised = [h for h in hosts if h.is_compromised]
         severity_counts = Counter(v.severity for v in vulns)
-        risk_rating = self._risk_rating(severity_counts)
+        risk_rating = self._risk_rating(severity_counts, compromised=bool(compromised))
 
         return {
             "session": session,
             "hosts": hosts,
+            "compromised_hosts": compromised,
             "vulnerabilities": vulns,
             "credentials": creds,
             "narrative": completed,
@@ -124,8 +126,11 @@ class ReportGenerator:
         }
 
     @staticmethod
-    def _risk_rating(severity_counts: Counter) -> str:
-        if severity_counts.get("critical", 0) > 0:
+    def _risk_rating(severity_counts: Counter, *, compromised: bool = False) -> str:
+        # A host the engine obtained a shell on is critical whatever the
+        # scanners logged. Deriving the rating from scanner severities alone
+        # let a rooted target be reported as "Informational".
+        if compromised or severity_counts.get("critical", 0) > 0:
             return "Critical"
         if severity_counts.get("high", 0) > 0:
             return "High"

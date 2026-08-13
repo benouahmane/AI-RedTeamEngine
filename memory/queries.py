@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from memory.models import (
@@ -30,11 +30,24 @@ def hosts_for(db: Session, session_id: uuid.UUID) -> list[Host]:
 
 
 def vulns_for(db: Session, session_id: uuid.UUID) -> list[Vulnerability]:
+    # Severity first, then proven-over-suspected, and only then CVSS. Ordering
+    # by CVSS alone buried the findings that matter most: an exploited RCE
+    # carries no CVSS score of its own, so nullslast pushed a confirmed root
+    # shell below every informational scanner hit.
+    severity_rank = case(
+        {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4},
+        value=Vulnerability.severity,
+        else_=5,
+    )
     return list(
         db.scalars(
             select(Vulnerability)
             .where(Vulnerability.session_id == session_id)
-            .order_by(Vulnerability.cvss.desc().nullslast())
+            .order_by(
+                severity_rank,
+                Vulnerability.exploited.desc(),
+                Vulnerability.cvss.desc().nullslast(),
+            )
         )
     )
 
@@ -96,6 +109,44 @@ def record_vulnerability(
     db.commit()
     db.refresh(vuln)
     return vuln
+
+
+def upsert_vulnerability(
+    db: Session,
+    session_id: uuid.UUID,
+    *,
+    host_ip: str,
+    title: str,
+    severity: str,
+    **fields: Any,
+) -> Vulnerability | None:
+    """Insert a vulnerability unless an equivalent row already exists.
+
+    Scanners get re-run and a foothold gets re-verified over several steps, so
+    without this the register grows a duplicate on every pass. When the same
+    finding comes back proven, the existing row is upgraded to `exploited`
+    rather than sitting alongside a second copy of itself.
+
+    Returns the new row, or None if it was a duplicate.
+    """
+    existing = db.scalar(
+        select(Vulnerability)
+        .where(Vulnerability.session_id == session_id)
+        .where(Vulnerability.host_ip == host_ip)
+        .where(Vulnerability.title == title)
+        .where(Vulnerability.cve.is_not_distinct_from(fields.get("cve")))
+        .where(Vulnerability.port.is_not_distinct_from(fields.get("port")))
+    )
+    if existing is not None:
+        if fields.get("exploited") and not existing.exploited:
+            existing.exploited = True
+            if fields.get("evidence"):
+                existing.evidence = fields["evidence"]
+            db.commit()
+        return None
+    return record_vulnerability(
+        db, session_id, host_ip=host_ip, title=title, severity=severity, **fields,
+    )
 
 
 def record_credential(

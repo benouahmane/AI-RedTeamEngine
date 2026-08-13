@@ -26,7 +26,11 @@ from sqlalchemy.orm import Session
 
 import tools  # noqa: F401  — registers wrappers
 from agent.decision_logger import DecisionLogger
-from agent.findings import extract_compromised_hosts, extract_credentials
+from agent.findings import (
+    extract_compromised_hosts,
+    extract_credentials,
+    extract_vulnerabilities,
+)
 from agent.llm import LLMClient, get_llm_client
 from agent.modes import ApprovalGateway, gateway_for
 from agent.prompts import build_step_prompt, build_system_prompt
@@ -408,16 +412,25 @@ class RedTeamAgent:
                     for p in (host.get("ports") or [])
                 ],
             )
-        # nuclei-style: vulnerabilities
-        for v in findings.get("vulnerabilities", []) or []:
-            queries.record_vulnerability(
+        # vulnerabilities — scanner output *and* confirmed exploitation
+        for vuln in extract_vulnerabilities(
+            findings,
+            tool_name=node.tool_name,
+            target=node.target,
+            success=status == ToolStatus.SUCCESS,
+        ):
+            queries.upsert_vulnerability(
                 self.db, self.session.id,
-                host_ip=(v.get("host") or "").split(":")[0] or "unknown",
-                title=v.get("name") or v.get("template_id") or "(unnamed)",
-                severity=v.get("severity") or "info",
-                cve=v.get("cve"), cvss=v.get("cvss_score"),
-                description=v.get("description"),
-                evidence=v.get("matched_at"),
+                host_ip=vuln.host_ip,
+                title=vuln.title[:500],
+                severity=vuln.severity,
+                port=vuln.port,
+                service=vuln.service,
+                cve=vuln.cve,
+                cvss=vuln.cvss,
+                description=vuln.description,
+                evidence=vuln.evidence,
+                exploited=vuln.exploited,
                 mitre_ttp=node.mitre_ttp,
             )
         # credentials — hydra/john/hashcat/crackmapexec/impacket/rubeus/kerberos

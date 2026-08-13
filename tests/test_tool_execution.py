@@ -428,6 +428,38 @@ def test_metasploit_exploit_requires_module(fake_msfrpc) -> None:
     assert "module" in (result.error or "").lower()
 
 
+def test_metasploit_module_metadata_pulls_cves() -> None:
+    """The vulnerability register needs the CVE, and msf already holds it."""
+    from tools.exploitation.metasploit import _module_metadata
+
+    class Mod:
+        moduleinfo = {
+            "name": 'Samba "username map script" Command Execution',
+            "description": "  This module exploits a command execution vuln.  ",
+            "rank": 600,
+            "references": [
+                ["CVE", "2007-2447"],
+                ["OSVDB", "34700"],
+                ["URL", "https://example.test/advisory"],
+            ],
+        }
+
+    meta = _module_metadata(Mod())
+    assert meta["cves"] == ["CVE-2007-2447"]
+    assert meta["module_name"].startswith("Samba")
+    assert meta["module_description"] == "This module exploits a command execution vuln."
+    assert meta["references"] == ["https://example.test/advisory"]
+
+
+def test_metasploit_module_metadata_survives_missing_moduleinfo() -> None:
+    """Older pymetasploit3 builds expose no moduleinfo — must not crash."""
+    from tools.exploitation.metasploit import _module_metadata
+
+    meta = _module_metadata(object())
+    assert meta["cves"] == []
+    assert meta["module_name"] is None
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # OpenVAS / Greenbone — multi-step GMP orchestration over gvm-cli
 # ────────────────────────────────────────────────────────────────────────────

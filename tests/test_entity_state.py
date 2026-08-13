@@ -21,6 +21,42 @@ def test_upsert_credential_dedupes(db, pentest_session):
     assert len(queries.creds_for(db, sid)) == 2
 
 
+def test_upsert_vulnerability_dedupes_and_upgrades_exploited(db, pentest_session):
+    sid = pentest_session.id
+    a = queries.upsert_vulnerability(db, sid, host_ip="10.0.0.5", port=445,
+                                     title="Samba RCE", severity="critical",
+                                     cve="CVE-2007-2447")
+    assert a is not None
+    assert a.exploited is False
+
+    # Same finding again, now proven — no second row, but the row is upgraded.
+    dup = queries.upsert_vulnerability(db, sid, host_ip="10.0.0.5", port=445,
+                                       title="Samba RCE", severity="critical",
+                                       cve="CVE-2007-2447", exploited=True,
+                                       evidence="session 1 opened")
+    assert dup is None
+    vulns = queries.vulns_for(db, sid)
+    assert len(vulns) == 1
+    assert vulns[0].exploited is True
+    assert vulns[0].evidence == "session 1 opened"
+
+    # A different port is a different finding.
+    assert queries.upsert_vulnerability(db, sid, host_ip="10.0.0.5", port=139,
+                                        title="Samba RCE", severity="critical",
+                                        cve="CVE-2007-2447") is not None
+    assert len(queries.vulns_for(db, sid)) == 2
+
+
+def test_vulns_ordered_by_severity_then_proof(db, pentest_session):
+    """An exploited RCE carries no CVSS, so CVSS-only ordering buried it."""
+    sid = pentest_session.id
+    queries.record_vulnerability(db, sid, host_ip="10.0.0.5", title="TLS cipher",
+                                 severity="info", cvss=2.6)
+    queries.record_vulnerability(db, sid, host_ip="10.0.0.5", title="Samba RCE",
+                                 severity="critical", cvss=None, exploited=True)
+    assert [v.title for v in queries.vulns_for(db, sid)] == ["Samba RCE", "TLS cipher"]
+
+
 def test_mark_host_compromised_creates_then_flags(db, pentest_session):
     sid = pentest_session.id
     host = queries.mark_host_compromised(db, sid, "10.0.0.9", note="via metasploit")

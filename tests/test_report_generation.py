@@ -105,6 +105,24 @@ def test_render_handles_empty_session(db, pentest_session) -> None:
     assert "Informational" in html
 
 
+def test_compromised_host_is_never_rated_informational(db, pentest_session) -> None:
+    """The regression this guards: the engine rooted the target and the report
+    still read '0 vulnerability findings / Informational'."""
+    task_tree.bootstrap_phases(db, pentest_session)
+    db.add(Host(session_id=pentest_session.id, ip="192.168.163.131",
+                hostname="metasploitable", is_compromised=True))
+    db.commit()
+
+    html = ReportGenerator().render_html(db, pentest_session)
+
+    assert "Informational" not in html
+    assert "Critical" in html
+    assert "1 host(s) were compromised" in html
+    # …and the fallback "expand the test scope" advice must not appear.
+    assert "No vulnerabilities recorded — consider expanding" not in html
+    assert "Rebuild" in html
+
+
 def test_write_persists_report_file(db, pentest_session, tmp_path) -> None:
     _populate(db, pentest_session)
     path = ReportGenerator(output_dir=tmp_path).write(db, pentest_session)

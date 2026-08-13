@@ -6,7 +6,11 @@ flag compromised hosts.
 """
 from __future__ import annotations
 
-from agent.findings import extract_compromised_hosts, extract_credentials
+from agent.findings import (
+    extract_compromised_hosts,
+    extract_credentials,
+    extract_vulnerabilities,
+)
 
 
 def test_extract_hydra_password():
@@ -126,3 +130,115 @@ def test_compromise_admin_credential_marks_host():
         {"host": "10.0.0.5", "username": "admin", "secret": "x", "is_admin": True},
     ]}
     assert "10.0.0.5" in extract_compromised_hosts(findings, tool_name="crackmapexec")
+
+
+# ─── vulnerability normalisation ──────────────────────────────────────────
+
+
+def test_extract_nuclei_vulnerability_shape():
+    findings = {
+        "target": "http://10.0.0.5:8080",
+        "vulnerabilities": [
+            {"template_id": "CVE-2021-44228", "name": "Apache Log4j RCE",
+             "severity": "critical", "host": "http://10.0.0.5:8080",
+             "matched_at": "http://10.0.0.5:8080/api", "type": "http",
+             "cve": "CVE-2021-44228", "cvss_score": 10.0,
+             "description": "JNDI lookup"},
+        ],
+    }
+    v = extract_vulnerabilities(findings, tool_name="nuclei", target="10.0.0.5")[0]
+    assert v.host_ip == "10.0.0.5"
+    assert v.title == "Apache Log4j RCE"
+    assert v.severity == "critical"
+    assert v.cve == "CVE-2021-44228"
+    assert v.cvss == 10.0
+    assert v.port == 8080
+    assert v.exploited is False
+
+
+def test_extract_openvas_shape_normalises_severity_and_port():
+    findings = {"vulnerabilities": [
+        {"host": "10.0.0.5", "port": 445, "port_spec": "445/tcp",
+         "name": "SMB signing disabled", "severity": "Moderate",
+         "cvss_score": 5.3, "cves": ["CVE-1999-0519"], "description": "…"},
+    ]}
+    v = extract_vulnerabilities(findings, tool_name="openvas")[0]
+    assert v.severity == "medium"          # "Moderate" is not a template class
+    assert v.port == 445
+    assert v.cve == "CVE-1999-0519"
+
+
+def test_successful_exploit_becomes_a_critical_finding():
+    """The regression that mattered: root on the box, zero findings recorded."""
+    findings = {
+        "module": "exploit/multi/samba/usermap_script",
+        "module_name": 'Samba "username map script" Command Execution',
+        "module_description": "This module exploits a command execution vulnerability.",
+        "cves": ["CVE-2007-2447"],
+        "options": {"RHOSTS": "192.168.163.131", "RPORT": 139},
+        "job_id": 3,
+        "session_id": 1,
+        "session": {"type": "shell", "session_port": 139, "info": "uid=0(root)"},
+    }
+    vulns = extract_vulnerabilities(
+        findings, tool_name="metasploit", target="192.168.163.131", success=True,
+    )
+    assert len(vulns) == 1
+    v = vulns[0]
+    assert v.host_ip == "192.168.163.131"
+    assert v.title == 'Samba "username map script" Command Execution'
+    assert v.severity == "critical"
+    assert v.cve == "CVE-2007-2447"
+    assert v.service == "samba"
+    assert v.port == 139
+    assert v.exploited is True
+    assert "session 1" in v.evidence
+
+
+def test_exploit_without_session_records_nothing():
+    """No session means no proof — the module launching is not a finding."""
+    findings = {
+        "module": "exploit/unix/ftp/vsftpd_234_backdoor",
+        "cves": ["CVE-2011-2523"],
+        "options": {"RHOSTS": "192.168.163.131"},
+        "job_id": 2, "session_id": None, "session": None,
+    }
+    assert extract_vulnerabilities(
+        findings, tool_name="metasploit", target="192.168.163.131",
+    ) == []
+
+
+def test_session_run_does_not_duplicate_the_exploit_finding():
+    """session_run carries session_id but no module — it verifies, not discovers."""
+    findings = {"session_id": "1", "command": "id", "output": "uid=0(root)"}
+    assert extract_vulnerabilities(
+        findings, tool_name="metasploit", target="192.168.163.131", success=True,
+    ) == []
+
+
+def test_credential_based_footholds_are_findings():
+    imp = extract_vulnerabilities(
+        {"action": "psexec", "output": "uid=0(root)"},
+        tool_name="impacket", target="10.0.0.6", success=True,
+    )
+    assert imp[0].severity == "high"
+    assert imp[0].exploited is True
+
+    cme = extract_vulnerabilities(
+        {"protocol": "smb", "valid_credentials": [
+            {"host": "10.0.0.5", "username": "admin", "secret": "x", "is_admin": True},
+            {"host": "10.0.0.6", "username": "svc", "secret": "y", "is_admin": False},
+        ]},
+        tool_name="crackmapexec",
+    )
+    assert len(cme) == 1                    # non-admin logins are not findings
+    assert "admin" in cme[0].title
+    assert cme[0].host_ip == "10.0.0.5"
+
+
+def test_extract_vulnerabilities_dedupes():
+    findings = {"vulnerabilities": [
+        {"host": "10.0.0.5", "name": "dup", "severity": "high", "port": 80},
+        {"host": "10.0.0.5", "name": "dup", "severity": "high", "port": 80},
+    ]}
+    assert len(extract_vulnerabilities(findings)) == 1
