@@ -3,6 +3,8 @@ against a populated session, plus the file-write path used by the CLI and API.
 """
 from __future__ import annotations
 
+import json
+
 from memory import queries, task_tree
 from memory.models import (
     AgentDecision,
@@ -148,6 +150,32 @@ def test_compromised_host_is_never_rated_informational(db, pentest_session) -> N
     # …and the fallback "expand the test scope" advice must not appear.
     assert "No vulnerabilities recorded — consider expanding" not in html
     assert "Rebuild" in html
+
+
+def test_findings_excerpt_is_capped() -> None:
+    """A full-port nmap result is ~700 lines of JSON; unclipped it overflowed
+    its <pre> and printed on top of the rows beneath it."""
+    from reports.generator import EXCERPT_LINES, excerpt
+
+    big = {"hosts": [{"port": p, "service": f"svc{p}"} for p in range(200)]}
+    out = excerpt(big)
+    assert out.count("\n") + 1 <= EXCERPT_LINES + 1     # +1 for the marker line
+    assert "truncated" in out
+    assert "lines total" in out
+
+    # Small findings pass through untouched and stay valid JSON.
+    small = {"session_id": "1", "output": "uid=0(root)"}
+    assert "truncated" not in excerpt(small)
+    assert json.loads(excerpt(small)) == small
+
+
+def test_evidence_table_clips_overflow(db, pentest_session) -> None:
+    _populate(db, pentest_session)
+    html = ReportGenerator().render_html(db, pentest_session)
+    assert 'class="evidence"' in html
+    assert "overflow: hidden" in html
+    # The old inline cap let overflow paint over the following rows.
+    assert 'style="max-height:200px"' not in html
 
 
 def test_write_persists_report_file(db, pentest_session, tmp_path) -> None:

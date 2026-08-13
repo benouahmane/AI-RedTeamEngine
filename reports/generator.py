@@ -12,6 +12,7 @@ Pulls every artefact required by FYP brief §3.3:
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import uuid
@@ -30,6 +31,31 @@ from reports.mitre_mapper import build_coverage_matrix
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 DEFAULT_OUTPUT_DIR = Path("artefacts/reports")
 
+# Evidence-table excerpt budget. A full-port nmap result is ~700 lines of JSON.
+EXCERPT_LINES = 24
+EXCERPT_CHARS = 1800
+
+
+def excerpt(value: Any, max_lines: int = EXCERPT_LINES, max_chars: int = EXCERPT_CHARS) -> str:
+    """Pretty-print a findings dict for the evidence table, capped.
+
+    The column is headed "Findings (excerpt)" but used to render the entire
+    dump: a single nmap result ran to four PDF pages, and because the <pre>
+    limited its height with overflow left visible, the overflow was painted
+    straight over the rows beneath it — two findings legibly on top of each
+    other. Cap it here; the full findings stay in the database.
+    """
+    text = value if isinstance(value, str) else json.dumps(
+        value, indent=2, sort_keys=True, default=str,
+    )
+    total = text.count("\n") + 1
+    out = "\n".join(text.splitlines()[:max_lines])
+    if len(out) > max_chars:
+        out = out[:max_chars].rstrip()
+    if len(out) < len(text):
+        out += f"\n… truncated ({total} lines total; full findings retained in the database)"
+    return out
+
 
 class ReportGenerator:
     def __init__(self, output_dir: Path | None = None) -> None:
@@ -40,6 +66,7 @@ class ReportGenerator:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        self.env.filters["excerpt"] = excerpt
 
     def render_html(self, db: Session, session: PentestSession) -> str:
         ctx = self._gather(db, session)
