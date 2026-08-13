@@ -32,6 +32,20 @@ def _payload(content: str = '{"action": "complete_session"}') -> dict[str, Any]:
     }
 
 
+@pytest.fixture(autouse=True)
+def pinned_defaults(monkeypatch):
+    """Isolate these tests from the operator's .env.
+
+    `settings` is a live singleton, so anyone running with
+    OPENROUTER_JSON_MODE=true saw test_json_mode_is_opt_in fail: it was
+    asserting on their environment rather than on the shipped default. Pin the
+    opt-in flags here; tests that exercise the opt-in flip them themselves.
+    """
+    monkeypatch.setattr(settings, "openrouter_json_mode", False, raising=False)
+    monkeypatch.setattr(settings, "openrouter_cache_system", False, raising=False)
+    monkeypatch.setattr(settings, "openrouter_max_tokens", 4096, raising=False)
+
+
 @pytest.fixture()
 def api_key(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_api_key", "sk-or-test", raising=False)
@@ -102,9 +116,63 @@ def test_empty_choices_raises(api_key):
     payload = {"model": "qwen/qwen3.8-max", "choices": [], "usage": {}}
     with (
         patch("agent.llm.httpx.post", return_value=_FakeResponse(payload)),
-        pytest.raises(ValueError),
+        pytest.raises(RuntimeError, match="empty response"),
     ):
         OpenRouterClient().complete("SYSTEM", "USER")
+
+
+def test_null_content_falls_back_to_reasoning(api_key):
+    """`content` arrives present-but-null, so a dict.get default never fires."""
+    payload = {
+        "model": "qwen/qwen3.8-max",
+        "choices": [{"message": {"role": "assistant", "content": None,
+                                 "reasoning": '{"action": "complete_session"}'}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+    with patch("agent.llm.httpx.post", return_value=_FakeResponse(payload)):
+        resp = OpenRouterClient().complete("SYSTEM", "USER")
+    assert resp.decision == {"action": "complete_session"}
+
+
+def test_empty_content_reports_finish_reason(api_key):
+    """A truncated reply must name the cause — finish_reason and the budget."""
+    payload = {
+        "model": "qwen/qwen3.8-max",
+        "choices": [{"message": {"content": None}, "finish_reason": "length"}],
+        "usage": {},
+    }
+    with (
+        patch("agent.llm.httpx.post", return_value=_FakeResponse(payload)),
+        pytest.raises(RuntimeError, match="finish_reason='length'"),
+    ):
+        OpenRouterClient().complete("SYSTEM", "USER")
+
+
+def test_parses_last_object_when_model_emits_several(api_key):
+    """Models routinely answer, reconsider in prose, then answer again.
+
+    first-brace-to-last-brace spans all of it and dies on "Extra data"; the
+    final object is the model's actual decision.
+    """
+    reply = (
+        '{"action": "execute_tool", "node_id": "first"}\n'
+        'Wait — that node has no tool attached. Correcting:\n'
+        '{"action": "execute_tool", "node_id": "second"}'
+    )
+    with patch("agent.llm.httpx.post", return_value=_FakeResponse(_payload(reply))):
+        resp = OpenRouterClient().complete("SYSTEM", "USER")
+    assert resp.decision["node_id"] == "second"
+
+
+def test_braces_inside_strings_do_not_break_parsing(api_key):
+    # The prose prefix is load-bearing: without it json.loads succeeds outright
+    # and the balanced-brace scanner — the thing under test — never runs.
+    reply = ('Here is my decision:\n'
+             '{"action": "skip_node", "reasoning_for_human": "a } brace \\" here"}')
+    with patch("agent.llm.httpx.post", return_value=_FakeResponse(_payload(reply))):
+        resp = OpenRouterClient().complete("SYSTEM", "USER")
+    assert resp.decision["action"] == "skip_node"
+    assert resp.decision["reasoning_for_human"] == 'a } brace " here'
 
 
 def test_cost_accounting_recognises_openrouter_id():
