@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from memory.models import (
@@ -12,6 +13,7 @@ from memory.models import (
     Credential,
     Host,
     PentestSession,
+    SessionStatus,
     Vulnerability,
 )
 
@@ -23,6 +25,48 @@ def get_session(db: Session, session_id: uuid.UUID) -> PentestSession | None:
 def list_sessions(db: Session, limit: int = 50) -> list[PentestSession]:
     stmt = select(PentestSession).order_by(PentestSession.started_at.desc()).limit(limit)
     return list(db.scalars(stmt))
+
+
+def stale_running_sessions(
+    db: Session, *, idle_minutes: int = 30,
+) -> list[tuple[PentestSession, datetime | None]]:
+    """Sessions still marked RUNNING whose process is plainly gone.
+
+    A killed process cannot update its own row, so a VM power-off or a SIGKILL
+    strands the session at RUNNING for ever. Staleness is judged on the last
+    decision logged (falling back to `started_at` for sessions that died before
+    step 1), because that is the only heartbeat the loop leaves behind.
+
+    Returns (session, last_activity) pairs so callers can report the gap.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=idle_minutes)
+    last_decision = (
+        select(
+            AgentDecision.session_id.label("session_id"),
+            func.max(AgentDecision.created_at).label("last_at"),
+        )
+        .group_by(AgentDecision.session_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(PentestSession, last_decision.c.last_at)
+        .outerjoin(last_decision, last_decision.c.session_id == PentestSession.id)
+        .where(PentestSession.status == SessionStatus.RUNNING)
+        .where(func.coalesce(last_decision.c.last_at, PentestSession.started_at) < cutoff)
+        .order_by(PentestSession.started_at)
+    ).all()
+    return [(s, last_at) for s, last_at in rows]
+
+
+def abort_stale_sessions(db: Session, *, idle_minutes: int = 30) -> list[PentestSession]:
+    """Mark orphaned RUNNING sessions as ABORTED. Returns the ones changed."""
+    stale = stale_running_sessions(db, idle_minutes=idle_minutes)
+    for session, last_at in stale:
+        session.status = SessionStatus.ABORTED
+        session.completed_at = last_at or session.started_at
+    if stale:
+        db.commit()
+    return [s for s, _ in stale]
 
 
 def hosts_for(db: Session, session_id: uuid.UUID) -> list[Host]:

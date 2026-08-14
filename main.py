@@ -104,6 +104,26 @@ def cmd_list(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    """Close out sessions whose process died without updating its own row."""
+    with SessionLocal() as db:
+        stale = queries.stale_running_sessions(db, idle_minutes=args.idle_minutes)
+        if not stale:
+            print(f"No sessions stuck in 'running' for more than {args.idle_minutes} minutes.")
+            return 0
+
+        for s, last_at in stale:
+            when = last_at or s.started_at
+            print(f"{s.id}  {s.target:20s}  last activity {when:%Y-%m-%d %H:%M:%S}")
+        if args.dry_run:
+            print(f"\n{len(stale)} session(s) would be marked aborted (--dry-run).")
+            return 0
+
+        aborted = queries.abort_stale_sessions(db, idle_minutes=args.idle_minutes)
+        print(f"\nMarked {len(aborted)} session(s) as aborted.")
+    return 0
+
+
 def cmd_tree(args: argparse.Namespace) -> int:
     sid = uuid.UUID(args.session_id)
     with SessionLocal() as db:
@@ -174,6 +194,16 @@ def main(argv: list[str] | None = None) -> int:
     p_bench.set_defaults(func=cmd_benchmark)
 
     sub.add_parser("list").set_defaults(func=cmd_list)
+
+    p_rec = sub.add_parser(
+        "reconcile",
+        help="close out sessions left stuck in 'running' by a killed process",
+    )
+    p_rec.add_argument("--idle-minutes", type=int, default=30, dest="idle_minutes",
+                       help="how long without a logged decision counts as dead (default 30)")
+    p_rec.add_argument("--dry-run", action="store_true",
+                       help="list what would change without writing")
+    p_rec.set_defaults(func=cmd_reconcile)
 
     p_tree = sub.add_parser("tree")
     p_tree.add_argument("session_id")

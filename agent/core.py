@@ -94,9 +94,19 @@ class RedTeamAgent:
         for _ in range(self.max_steps):
             try:
                 step = self._step(previous_result)
+            except KeyboardInterrupt:
+                # KeyboardInterrupt/SystemExit derive from BaseException, so the
+                # `except Exception` below never saw them: Ctrl-C left the row
+                # at RUNNING for ever, and nothing reconciles it afterwards.
+                log.warning("Interrupted — marking session aborted")
+                self.session.status = SessionStatus.ABORTED
+                self.session.completed_at = datetime.utcnow()
+                self.db.commit()
+                raise
             except Exception as exc:                                  # noqa: BLE001
                 log.exception("Agent step crashed")
                 self.session.status = SessionStatus.ERROR
+                self.session.completed_at = datetime.utcnow()
                 self.db.commit()
                 raise
             if step.action in {"complete_session", "abort"}:

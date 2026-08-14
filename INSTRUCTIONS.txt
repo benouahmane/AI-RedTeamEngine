@@ -376,6 +376,13 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
         python main.py list                  # past sessions
         python main.py tree <session_id>     # show the PTT
+
+        # A session killed mid-run (Ctrl-C, VM power-off, SIGKILL)
+        # cannot update its own row, so it stays 'running' for ever
+        # and the dashboard keeps polling it. Sweep those:
+        python main.py reconcile --dry-run   # show what is stuck
+        python main.py reconcile             # mark them aborted
+        python main.py reconcile --idle-minutes 60
         python main.py report <session_id>   # generate HTML report
 
         # add --pdf to also convert it. Needs one of weasyprint

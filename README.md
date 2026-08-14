@@ -64,6 +64,8 @@ python main.py run-range --targets 10.10.0.0/24 --env env2 --workers 8
 # Results
 python main.py list                        # past sessions
 python main.py tree <session_id>           # the task tree
+python main.py reconcile --dry-run         # sessions stuck in 'running'
+python main.py reconcile                   # …mark them aborted
 python main.py report <session_id>         # HTML report -> artefacts/reports/
 python main.py report <session_id> --pdf   # …and a PDF beside it
 

@@ -68,6 +68,56 @@ def test_mark_host_compromised_creates_then_flags(db, pentest_session):
     assert again.id == host.id
 
 
+def test_stale_running_sessions_detected_and_aborted(db, pentest_session):
+    """Ctrl-C and VM power-offs stranded sessions at RUNNING for ever: a dead
+    process cannot update its own row, so something external must."""
+    from datetime import datetime, timedelta
+
+    from memory.models import AgentDecision, SessionStatus
+
+    sid = pentest_session.id
+    pentest_session.status = SessionStatus.RUNNING
+    pentest_session.started_at = datetime.utcnow() - timedelta(hours=3)
+    db.add(AgentDecision(
+        session_id=sid, step_number=1, context={}, proposed_action={},
+        created_at=datetime.utcnow() - timedelta(hours=2),
+    ))
+    db.commit()
+
+    assert len(queries.stale_running_sessions(db, idle_minutes=30)) == 1
+    # A generous window spares a session that is merely slow.
+    assert queries.stale_running_sessions(db, idle_minutes=600) == []
+
+    aborted = queries.abort_stale_sessions(db, idle_minutes=30)
+    assert [s.id for s in aborted] == [sid]
+    assert pentest_session.status == SessionStatus.ABORTED
+    # completed_at is backdated to the last real activity, not "now".
+    assert pentest_session.completed_at < datetime.utcnow() - timedelta(minutes=90)
+    # Idempotent — no longer RUNNING, so a second sweep finds nothing.
+    assert queries.abort_stale_sessions(db, idle_minutes=30) == []
+
+
+def test_stale_sweep_ignores_recent_and_finished_sessions(db, pentest_session):
+    from datetime import datetime, timedelta
+
+    from memory.models import SessionStatus
+
+    pentest_session.status = SessionStatus.RUNNING
+    pentest_session.started_at = datetime.utcnow() - timedelta(minutes=2)
+    db.commit()
+    assert queries.stale_running_sessions(db, idle_minutes=30) == []
+
+    # A session that died before its first step is judged on started_at.
+    pentest_session.started_at = datetime.utcnow() - timedelta(hours=1)
+    db.commit()
+    assert len(queries.stale_running_sessions(db, idle_minutes=30)) == 1
+
+    # Completed sessions are never touched, however old.
+    pentest_session.status = SessionStatus.COMPLETED
+    db.commit()
+    assert queries.stale_running_sessions(db, idle_minutes=30) == []
+
+
 def test_entity_snapshot_shape(db, pentest_session):
     sid = pentest_session.id
     queries.upsert_host(
