@@ -16,7 +16,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
     agent at runtime).
   - An Anthropic API key (sk-ant-...).
   - At least one isolated lab target the agent is allowed to
-    touch. Defaults assume Metasploitable on 192.168.56.101.
+    touch. Defaults assume Metasploitable on 192.168.163.131.
 
 ----------------------------------------------------------------
  STEP 0 — PREPARE THE TARGET VM (DO THIS FIRST)
@@ -44,7 +44,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   4. Confirm reachability FROM KALI:
 
-       ping -c3 192.168.56.101
+       ping -c3 192.168.163.131
 
      If this fails, fix networking before continuing — every later
      step depends on it.
@@ -56,7 +56,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
  STEP 1 — CLONE THE REPO
 ----------------------------------------------------------------
 
-    git clone https://github.com/TheRamiB/AI-RedTeamEngine.git
+    git clone https://github.com/benouahmane/AI-RedTeamEngine.git
     cd AI-RedTeamEngine
 
 ----------------------------------------------------------------
@@ -92,15 +92,24 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
     nano .env
 
-  ONE setting has no working default and must be filled in:
+  ONE setting has no working default and must be filled in — which
+  one depends on LLM_PROVIDER:
 
-    ANTHROPIC_API_KEY=sk-ant-...your real key...
+    LLM_PROVIDER=anthropic     (default)
+        ANTHROPIC_API_KEY=sk-ant-...your real key...
+
+    LLM_PROVIDER=openrouter
+        OPENROUTER_API_KEY=sk-or-...your real key...
+        OPENROUTER_MODEL=anthropic/claude-sonnet-4.6
+
+  The engine reads only the key for the provider you selected, so a
+  blank ANTHROPIC_API_KEY is fine on openrouter and vice versa.
 
   ONE setting to check against your lab — it ships pre-filled with
   the three environments from the brief, so if your target from
-  STEP 0 is on 192.168.56.0/24 it already works untouched:
+  STEP 0 is on 192.168.163.0/24 it already works untouched:
 
-    ALLOWED_TARGET_RANGES=192.168.56.0/24,10.10.0.0/16,10.20.0.0/16
+    ALLOWED_TARGET_RANGES=192.168.163.0/24,10.10.0.0/16,10.20.0.0/16
         Comma-separated CIDR allowlist. The IP from STEP 0 MUST be
         inside one of these or every action is rejected as "out of
         scope". Add your CIDR if your lab uses different addressing.
@@ -108,7 +117,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
         Keep the mask tight — the agent may touch anything inside
         the ranges listed here. If the target shares a LAN with
         real devices, pin the single host:
-            ALLOWED_TARGET_RANGES=192.168.56.101/32
+            ALLOWED_TARGET_RANGES=192.168.163.131/32
 
         Leaving it EMPTY disables the check entirely (everything is
         allowed). The CLI warns on stderr when this happens; never
@@ -343,7 +352,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   (a) Command line — start a session against one target:
 
-        python main.py run --target 192.168.56.101 \
+        python main.py run --target 192.168.163.131 \
                            --env env1 \
                            --mode human_in_loop
 
@@ -355,7 +364,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
         [Mode B] Proposed action for node 3f2a...
           Title:   Port scan target
           Tool:    nmap
-          Params:  {"target": "192.168.56.101", ...}
+          Params:  {"target": "192.168.163.131", ...}
           Why:     Establish attack surface before enumeration
         Approve? [y/N/skip]:
 
@@ -368,6 +377,13 @@ running on a fresh Kali Linux VM. Follow the sections in order.
         python main.py list                  # past sessions
         python main.py tree <session_id>     # show the PTT
         python main.py report <session_id>   # generate HTML report
+
+        # add --pdf to also convert it. Needs one of weasyprint
+        # (best fidelity), wkhtmltopdf, or headless chromium:
+        #     sudo apt install -y weasyprint
+        # Without one the HTML is still written and the command
+        # prints what to install.
+        python main.py report <session_id> --pdf
 
         # many hosts concurrently (CIDR, comma list, or host file)
         python main.py run-range --targets 10.10.0.0/24 \
@@ -449,7 +465,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
  TARGET ENVIRONMENTS
 ----------------------------------------------------------------
 
-  env1   192.168.56.0/24   Metasploitable 2/3, DVWA, Kioptrix
+  env1   192.168.163.0/24   Metasploitable 2/3, DVWA, Kioptrix
   env2   10.10.0.0/16      50 VulnHub VMs
   env3   10.20.0.0/16      GOAD Active Directory (requires VPN)
 

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # which surfaces as "LLM returned malformed JSON" with prose in the dump.
     # Raise this when routing to one.
     openrouter_max_tokens: int = 4096
-    openrouter_referer: str = "https://github.com/TheRamiB/AI-RedTeamEngine"
+    openrouter_referer: str = "https://github.com/benouahmane/AI-RedTeamEngine"
 
     msf_rpc_host: str = "127.0.0.1"
     msf_rpc_port: int = 55553

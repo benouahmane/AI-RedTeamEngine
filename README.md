@@ -14,7 +14,7 @@ Kali is the supported runtime - every offensive tool the agent calls (nmap, meta
 
 ```bash
 # 1. Clone
-git clone https://github.com/TheRamiB/AI-RedTeamEngine.git
+git clone https://github.com/benouahmane/AI-RedTeamEngine.git
 cd AI-RedTeamEngine
 
 # 2. One-shot install (OS deps, Python venv, CALDERA)
@@ -22,7 +22,9 @@ chmod +x setup_kali.sh
 ./setup_kali.sh
 
 # 3. Configure
-nano .env          # set ANTHROPIC_API_KEY
+nano .env          # LLM_PROVIDER=anthropic  -> set ANTHROPIC_API_KEY
+                   # LLM_PROVIDER=openrouter -> set OPENROUTER_API_KEY
+                   #                            and OPENROUTER_MODEL
                    # check ALLOWED_TARGET_RANGES covers your target's IP
 
 # 4. Start Postgres + Neo4j
@@ -51,24 +53,27 @@ Both can run as systemd services instead — see STEP 6 and 6B in `INSTRUCTIONS.
 source .venv/bin/activate
 
 # Supervised — approve each action (prompts in THIS terminal)
-python main.py run --target 192.168.56.101 --mode human_in_loop
+python main.py run --target 192.168.163.131 --mode human_in_loop
 
 # Unattended — no gate, used for benchmarks
-python main.py run --target 192.168.56.101 --mode autonomous
+python main.py run --target 192.168.163.131 --mode autonomous
 
 # Many hosts concurrently
 python main.py run-range --targets 10.10.0.0/24 --env env2 --workers 8
 
 # Results
-python main.py list                  # past sessions
-python main.py tree <session_id>     # the task tree
-python main.py report <session_id>   # HTML report -> artefacts/reports/
+python main.py list                        # past sessions
+python main.py tree <session_id>           # the task tree
+python main.py report <session_id>         # HTML report -> artefacts/reports/
+python main.py report <session_id> --pdf   # …and a PDF beside it
 
 # Score against ground truth (FYP D5)
 python main.py benchmark --manifest benchmark/ground_truth/metasploitable2.json
 ```
 
-Replace `192.168.56.101` with your target's actual IP. It must fall inside `ALLOWED_TARGET_RANGES` in `.env`, and must be a literal IP — hostnames are rejected by the scope check.
+`192.168.163.131` is env1's Metasploitable 2 host — replace it with your target's actual IP. It must fall inside `ALLOWED_TARGET_RANGES` in `.env`, and must be a literal IP: with an allowlist configured the scope check rejects hostnames outright. Leaving `ALLOWED_TARGET_RANGES` empty disables the check for everything, hostnames included, and the CLI warns on stderr when it does.
+
+PDF conversion needs one of `weasyprint` (best fidelity), `wkhtmltopdf`, or a headless Chromium; without one the HTML is still written and the command reports what to install.
 
 Or drive it from the browser:
 
