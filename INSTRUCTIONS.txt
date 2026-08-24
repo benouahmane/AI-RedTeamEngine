@@ -31,8 +31,8 @@ running on a fresh Kali Linux VM. Follow the sections in order.
        - VMware:      Host-only
        - KVM/libvirt: an isolated virtual network
      Host-Only / isolated keeps the deliberately vulnerable target
-     off your real LAN and off the internet — required by section 9
-     of the FYP brief.
+     off your real LAN and off the internet — see the authorisation
+     rules at the end of this file.
 
   2. Boot the target and find its IP:
        ip a          (Linux target, e.g. Metasploitable)
@@ -75,7 +75,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
     - nodejs + npm (needed to build the CALDERA web UI)
     - CALDERA into ./caldera with its own venv, pinned to release
       5.3.0 from github.com/apache/caldera — a REQUIRED component
-      (FYP brief 1.1 / 2.4). If this part fails, setup finishes the
+      of this project. If this part fails, setup finishes the
       rest and prints a loud CALDERA INSTALL FAILED block at the
       end with retry commands. Do not ignore it.
     - Copies .env.example to .env if .env doesn't exist yet
@@ -106,7 +106,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
   blank ANTHROPIC_API_KEY is fine on openrouter and vice versa.
 
   ONE setting to check against your lab — it ships pre-filled with
-  the three environments from the brief, so if your target from
+  the three lab environments, so if your target from
   STEP 0 is on 192.168.163.0/24 it already works untouched:
 
     ALLOWED_TARGET_RANGES=192.168.163.0/24,10.10.0.0/16,10.20.0.0/16
@@ -150,7 +150,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
   anthropic   (default, recommended)
       ANTHROPIC_API_KEY=sk-ant-...
       ANTHROPIC_MODEL=claude-sonnet-4-6
-      The orchestration stack named in the FYP brief (section 2.1).
+      The default orchestration stack.
       Prompt caching is handled automatically. Use this for the runs
       that produce your assessment reports.
 
@@ -158,8 +158,8 @@ running on a fresh Kali Linux VM. Follow the sections in order.
       OPENROUTER_API_KEY=sk-or-...
       OPENROUTER_MODEL=qwen/qwen3.8-max
       One key, many vendors. Added so the same target can be re-run
-      under a different model and scored, which is what turns D5 into
-      a measured comparison instead of a citation.
+      under a different model and scored, which makes the comparison
+      measured rather than asserted.
 
   COST — roughly, for one complete Metasploitable 2 run (~60 steps):
       claude-sonnet-4-6   ~ $1.00
@@ -243,9 +243,8 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   CALDERA drives the `caldera` simulation tool: MITRE ATT&CK-mapped
   adversary emulation and the purple-team telemetry consumed by the
-  paired P2-BLUE project. It is a required component of this project
-  (FYP brief section 1.1 Core Technologies and section 2.4 Tool
-  Stack), not an optional add-on.
+  paired blue team project. It is a required component of this project
+  and part of its core tool stack, not an optional add-on.
 
   setup_kali.sh already cloned + installed CALDERA into ./caldera,
   pinned to release 5.3.0 from https://github.com/apache/caldera
@@ -396,7 +395,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
         python main.py run-range --targets 10.10.0.0/24 \
                                 --env env2 --workers 8
 
-        # score a run against ground truth (FYP D5)
+        # score a run against ground truth
         python main.py benchmark \
             --manifest benchmark/ground_truth/metasploitable2.json
 
@@ -442,8 +441,7 @@ running on a fresh Kali Linux VM. Follow the sections in order.
     artefacts/benchmarks/<session_id>.md       benchmark summary
 
   The whole artefacts/ tree is gitignored — reports contain live
-  vulnerability detail and credentials. Handle them per section 9
-  of the FYP brief.
+  vulnerability detail and credentials. Handle them accordingly.
 
 ----------------------------------------------------------------
  OPERATION MODES
@@ -572,6 +570,6 @@ running on a fresh Kali Linux VM. Follow the sections in order.
 
   This engine is designed for use against ISOLATED LAB VMs only.
   Do NOT point it at any host you don't own or have explicit
-  written authorisation to test. See section 9 of the FYP brief.
+  written authorisation to test.
 
 ================================================================

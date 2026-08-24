@@ -1,6 +1,6 @@
 """Score a completed session against a ground-truth manifest.
 
-Produces the metrics the FYP benchmark study (D5) and research questions RQ1/RQ2
+Produces the metrics the benchmark study
 call for: coverage and completeness (port/CVE precision-recall, ATT&CK technique
 coverage), capability (hosts compromised, flags captured, time-to-first-shell),
 and efficiency (agent steps, token cost).

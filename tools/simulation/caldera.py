@@ -3,7 +3,7 @@
 Talks to a running CALDERA server (`caldera_url` + `caldera_api_key` in .env)
 over its v2 API. Useful for MITRE ATT&CK-mapped, repeatable attack chains that
 complement the engine's interactive tooling — and for generating telemetry the
-paired Blue Team project (P2-BLUE) can detect.
+paired blue team project can detect.
 
 Actions:
   - list_adversaries  — available adversary profiles (ability chains)

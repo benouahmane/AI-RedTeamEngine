@@ -156,10 +156,11 @@ STEP_TEMPLATE = """\
 
   - id: {session_id}
   - target: {target}
-  - environment: {environment}
+  - environment: {environment} — {environment_description}
   - mode: {mode}
   - objective: {objective}
   - allowed_targets: {allowed_targets}
+{environment_notes}
 
 ## Previous action result
 
@@ -215,11 +216,20 @@ def build_step_prompt(
     tree_context: dict[str, Any],
     previous_result: dict[str, Any] | None,
     entity_state: dict[str, Any] | None = None,
+    environment_description: str = "",
+    environment_notes: str = "",
 ) -> str:
+    # The environment key alone ("env3") told the model nothing. Its description
+    # and tactical note say what kind of estate this is — an AD forest wants
+    # roasting before brute force, a vuln VM wants service exploits — which is
+    # the difference between the label meaning something and being decoration.
+    notes_line = f"  - guidance: {environment_notes}\n" if environment_notes else ""
     return STEP_TEMPLATE.format(
         session_id=session_id,
         target=target,
         environment=environment,
+        environment_description=environment_description or "(no description)",
+        environment_notes=notes_line,
         mode=mode,
         objective=objective or "Achieve initial access and document all findings.",
         allowed_targets=", ".join(allowed_targets) or "(none configured)",

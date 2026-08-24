@@ -33,7 +33,7 @@ def _start_agent_thread(session_id: uuid.UUID) -> None:
 
     Uses its own SQLAlchemy session (each thread must own its connection).
     Production should swap this for a worker queue (Celery/Arq) — fine for
-    single-operator FYP runs.
+    single-operator lab runs.
     """
     def _run() -> None:
         with SessionLocal() as worker_db:

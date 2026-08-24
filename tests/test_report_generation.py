@@ -1,4 +1,4 @@
-"""End-to-end report rendering — verifies the seven §3.3 sections render
+"""End-to-end report rendering — verifies all seven sections render
 against a populated session, plus the file-write path used by the CLI and API.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def test_render_html_includes_all_seven_sections(db, pentest_session) -> None:
     ):
         assert heading in html, f"missing section heading: {heading}"
 
-    # Appendices required by FYP §8.1
+    # Appendices — hosts discovered and the decision log
     assert "Appendix A" in html
     assert "Appendix B" in html
 

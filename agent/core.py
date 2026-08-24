@@ -35,6 +35,7 @@ from agent.llm import LLMClient, get_llm_client
 from agent.modes import ApprovalGateway, gateway_for
 from agent.prompts import build_step_prompt, build_system_prompt
 from config import settings
+from environments.config import ENVIRONMENTS
 from memory import queries, task_tree
 from memory.models import (
     AttackPhase,
@@ -139,10 +140,13 @@ class RedTeamAgent:
         ascii_tree = task_tree.to_ascii(self.db, self.session.id)
         entities = queries.entity_snapshot(self.db, self.session.id)
 
+        spec = ENVIRONMENTS.get(self.session.environment)
         user_prompt = build_step_prompt(
             session_id=str(self.session.id),
             target=self.session.target,
             environment=self.session.environment,
+            environment_description=spec.description if spec else "",
+            environment_notes=spec.notes if spec else "",
             mode=self.session.mode.value,
             objective=self.session.objective or "",
             allowed_targets=self._allowed,

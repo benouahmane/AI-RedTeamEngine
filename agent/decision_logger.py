@@ -1,8 +1,8 @@
-"""Decision audit logger — required by FYP brief §8.1.
+"""Decision audit logger — every agent decision is recorded.
 
 Every LLM call is persisted with the context that was fed in, the proposed
 action, the actual command executed, and the result. This is what enables
-the post-engagement benchmark study (RQ1, RQ4).
+the post-engagement benchmark study.
 """
 from __future__ import annotations
 

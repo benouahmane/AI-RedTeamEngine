@@ -1,10 +1,56 @@
 # AI Red Team Engine
 
-Autonomous penetration testing framework - a ReAct-style agent driving offensive security tools against isolated lab environments. The reasoning loop is implemented directly against the provider API (no LangChain runtime dependency); see `agent/core.py`. Two providers are supported via `LLM_PROVIDER`: `anthropic` (default) and `openrouter` (many vendors behind one key, for benchmark comparisons).
+An LLM agent that plans and executes a penetration test end to end — reconnaissance, exploitation, post-exploitation — then writes the report.
 
-> **Lab use only.** This system is designed exclusively for authorised testing in isolated environments. Never point it at a host you do not own or have explicit written authorisation to test.
+Point it at a host and it decides what to run next at every step, reasoning over a task tree it builds and revises as it learns. It drives 24 real offensive tools (Nmap, Metasploit, Impacket, BloodHound, Nuclei, …), records every decision it makes, and produces a MITRE ATT&CK-mapped report from that record.
 
-**`INSTRUCTIONS.txt` is the full setup and run guide.** This README is the overview; that file has the step-by-step, including target VM preparation and troubleshooting.
+> **Lab use only.** Built for authorised testing in isolated environments. Never point it at a host you do not own or have explicit written authorisation to test. A CIDR allowlist is enforced on every action, not just at launch.
+
+## What it actually does
+
+A single autonomous run against Metasploitable 2, from the decision log:
+
+```
+1  recon          nmap -sV -sC -O -p- 192.168.163.131          T1046
+2  exploitation   exploit/unix/ftp/vsftpd_234_backdoor         T1190   → session 1
+3  post_exploit   session_run: id && whoami && uname -a        T1059.004
+                  uid=0(root) gid=0(root)  metasploitable
+4  complete_session
+```
+
+Four steps, ~7 minutes, and the resulting report opens with:
+
+> **1 host compromised: 192.168.163.131.** Interactive access was obtained and verified.
+>
+> | Severity | Title | Host | CVE | Exploited |
+> |---|---|---|---|---|
+> | critical | VSFTPD 2.3.4 Backdoor Command Execution | 192.168.163.131:21 | CVE-2011-2523 | ✓ |
+
+The CVE isn't hardcoded — it's read from the Metasploit module's own reference list at exploitation time, so the register can't drift from what the tooling actually knows.
+
+## Design decisions worth explaining
+
+**No agent framework.** The ReAct loop is ~200 lines in [`agent/core.py`](agent/core.py) talking directly to the provider API. No LangChain, no LlamaIndex — zero imports. Agent frameworks abstract exactly the part that needed to be inspectable here: the decision path. Every step is a row in `agent_decisions` with the prompt context, the proposed action, the tool result, and the token counts.
+
+**The plan is the memory.** Rather than a scrolling message history, the agent reasons over a **Pentesting Task Tree** persisted in PostgreSQL — a hierarchical plan whose nodes carry status, findings and MITRE tags. Each step feeds the model a compact tree snapshot plus a consolidated view of everything discovered so far, so context stays roughly constant no matter how long the run goes.
+
+**Findings are normalised, not just logged.** Every wrapper reports credentials in its own shape — `hydra` gives passwords, `secretsdump` gives NT hashes, Kerberos tools give tickets. [`agent/findings.py`](agent/findings.py) reduces all of them to one representation written into shared entity tables, which is what makes credential reuse across hosts possible rather than aspirational.
+
+**Adding a tool is one class.** Wrappers implement a uniform interface and register themselves; the tool catalogue in the system prompt is generated from the registry at startup. Write the class, and the agent knows about it.
+
+**Evidence over assertion.** The vulnerability register is populated from *confirmed* exploitation and scanner output — never from the agent's own claims. An agent that names a CVE while planning doesn't get a finding; a shell on the box does.
+
+**168 tests**, with every offensive binary and RPC call mocked, so the suite runs anywhere without a lab.
+
+## Stack
+
+Python 3.13 · PostgreSQL (JSONB) + SQLAlchemy 2.0 + Alembic · Neo4j (BloodHound graphs) · FastAPI + HTMX · Jinja2 · Docker Compose · Kali Linux
+
+Two LLM providers behind `LLM_PROVIDER`: `anthropic` (default) and `openrouter` (many vendors on one key, for cross-model comparison).
+
+---
+
+**`INSTRUCTIONS.txt` is the full setup and run guide.** The rest of this README is the overview; that file has the step-by-step, including target VM preparation and troubleshooting.
 
 ## Quick start (Kali Linux)
 
@@ -69,7 +115,7 @@ python main.py reconcile                   # …mark them aborted
 python main.py report <session_id>         # HTML report -> artefacts/reports/
 python main.py report <session_id> --pdf   # …and a PDF beside it
 
-# Score against ground truth (FYP D5)
+# Score against ground truth
 python main.py benchmark --manifest benchmark/ground_truth/metasploitable2.json
 ```
 
@@ -94,7 +140,7 @@ In the dashboard, creating a session and running it are two steps: submit the ne
 | `memory/` | PostgreSQL context — sessions, hosts, vulns, **PTT (task tree)** |
 | `environments/` | Lab env config (Metasploitable, VulnHub, GOAD) |
 | `reports/` | Jinja2 pentest report generator |
-| `benchmark/` | Ground-truth manifests and scoring — AI vs manual comparison (D5) |
+| `benchmark/` | Ground-truth manifests and scoring — AI vs manual comparison |
 | `api/` | FastAPI + HTMX dashboard |
 | `scripts/` | msfrpcd + CALDERA start scripts and systemd units |
 | `migrations/` | Alembic schema versions |
@@ -105,11 +151,19 @@ In the dashboard, creating a session and running it are two steps: submit the ne
 - **Autonomous** - agent completes the full pentest without intervention.
 - **Human-in-the-loop** - every proposed action waits for analyst approval. *Where* it waits depends on how you launched it: sessions started from the CLI prompt in that terminal; sessions started from the dashboard wait on a browser click and time out after one hour.
 
+## Reports
+
+Seven sections, rendered from the database rather than assembled by the model: executive summary, scope, attack narrative, evidence, vulnerability register, MITRE ATT&CK coverage matrix, recommendations — plus appendices for discovered hosts and the full decision log with per-step token counts.
+
+Coverage is measured against a 42-technique catalogue spanning 9 tactics, derived from what the registered tools can actually exercise. Techniques the agent uses that fall outside it are surfaced explicitly rather than silently dropped.
+
+```bash
+python main.py report <session_id> --pdf
+```
+
 ## Architecture
 
-A multi-layer ReAct stack. An LLM agent reasons over a **Pentesting Task Tree** held in PostgreSQL - a hierarchical plan of attack tasks that doubles as the agent's working memory - and picks the next task to run at each step. Offensive tools sit behind a uniform wrapper interface and are exposed to the model as a generated catalogue, so registering a wrapper is all it takes to make the agent aware of it. Findings are normalised into shared entity tables (hosts, credentials, vulnerabilities), which is what enables credential reuse and cross-host correlation. Every decision is logged, every action carries a MITRE ATT&CK tag, and reports are rendered from that record.
-
-See `ARCHITECTURE.md` for the full design.
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design — the ReAct loop, the task-tree contract, the tool-wrapper interface, the data model, and how to extend each.
 
 ## Documentation
 

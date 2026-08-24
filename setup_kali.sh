@@ -93,7 +93,7 @@ fi
 
 echo "--- [7/7] Installing CALDERA (adversary-emulation server) ---"
 # The `caldera` tool wrapper drives a CALDERA server over REST. CALDERA is a
-# required component of this project (FYP brief §1.1 Core Technologies, §2.4
+# required component of this project (see the tool stack in ARCHITECTURE.md,
 # Tool Stack), not an optional extra.
 #
 # Cloned into ./caldera with its own venv so its pinned deps don't collide

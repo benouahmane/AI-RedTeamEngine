@@ -265,14 +265,14 @@ class Credential(Base):
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Decision audit log (mandatory per FYP brief §8.1)
+# Decision audit log
 # ────────────────────────────────────────────────────────────────────────────
 
 
 class AgentDecision(Base):
     """One row per LLM decision: context fed → proposed action → result.
 
-    Required by FYP brief §8.1: every agent decision session must be logged.
+    Every agent decision in a session is logged here.
     """
     __tablename__ = "agent_decisions"
 

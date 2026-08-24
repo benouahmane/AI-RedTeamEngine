@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     anthropic_planner_model: str | None = None
     anthropic_parser_model: str | None = None
 
-    # OpenRouter gateway — used for cross-vendor benchmark runs (FYP D5).
+    # OpenRouter gateway — used for cross-vendor benchmark runs.
     openrouter_api_key: str | None = None
     openrouter_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "qwen/qwen3.8-max"

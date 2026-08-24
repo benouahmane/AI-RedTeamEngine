@@ -199,7 +199,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_credentials_session_id", "credentials", ["session_id"])
 
-    # ─── agent_decisions (FYP §8.1 audit log) ────────────────────────────
+    # ─── agent_decisions (decision audit log) ────────────────────────────
     op.create_table(
         "agent_decisions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),

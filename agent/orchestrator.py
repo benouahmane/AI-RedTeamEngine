@@ -21,6 +21,7 @@ from pathlib import Path
 from agent.core import RedTeamAgent
 from agent.modes import gateway_for
 from config import settings
+from environments.config import ENVIRONMENTS
 from memory import task_tree
 from memory.db import SessionLocal
 from memory.models import OperationMode, PentestSession, SessionStatus
@@ -114,6 +115,10 @@ def run_targets(
     if not targets:
         return []
     per_host_steps = max_steps or settings.max_steps_per_host
+    # Same fallback as the single-target path: an unset objective leaves every
+    # session in the fan-out with a blank goal and a blank report field.
+    spec = ENVIRONMENTS.get(environment)
+    objective = objective or (spec.default_objective if spec else None)
 
     if mode == OperationMode.HUMAN_IN_LOOP and workers > 1:
         log.warning("human_in_loop with workers>1 interleaves approval prompts; "

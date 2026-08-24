@@ -1,4 +1,4 @@
-"""Static configuration for the three lab environments described in the brief."""
+"""Static configuration for the three lab environments."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,7 +23,7 @@ ENVIRONMENTS: dict[str, EnvironmentSpec] = {
         network_cidr="192.168.163.0/24",
         description="Metasploitable 2/3, DVWA, VulnOS, Kioptrix series. AI calibration baseline.",
         default_objective="Achieve root on every host and document each CVE exploited.",
-        # VMware host-only subnet. The brief quotes 192.168.56.0/24 (VirtualBox's
+        # VMware host-only subnet. 192.168.56.0/24 is VirtualBox's
         # default host-only range); this lab runs on VMware, which allocates
         # 192.168.163.0/24. Keep this in sync with ALLOWED_TARGET_RANGES in .env.
         targets=[

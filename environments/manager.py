@@ -6,7 +6,6 @@ agent has a single place to ask "am I currently connected to env3?".
 """
 from __future__ import annotations
 
-import ipaddress
 import socket
 from dataclasses import dataclass
 
@@ -29,12 +28,13 @@ class EnvironmentManager:
             raise KeyError(f"Unknown environment: {env_key}. Choose from {list(self.envs)}")
         return self.envs[env_key]
 
-    def is_in_scope(self, env_key: str, target: str) -> bool:
-        spec = self.get(env_key)
-        try:
-            return ipaddress.ip_address(target) in ipaddress.ip_network(spec.network_cidr)
-        except ValueError:
-            return False
+    # NOTE: there is deliberately no scope check here. Scope is enforced in one
+    # place — `RedTeamAgent._target_in_scope`, reading ALLOWED_TARGET_RANGES —
+    # and it is checked on every proposed action, not just at launch. A second,
+    # never-called gate keyed on `network_cidr` used to live here; two sources
+    # of truth for "is this target allowed" is exactly the kind of thing that
+    # gets out of step. `main.warn_if_outside_environment` reports a mismatch
+    # against the declared network without blocking.
 
     def check_reachability(self, env_key: str, *, port: int = 22, timeout: float = 2.0) -> ReachabilityCheck:
         """Quick TCP probe against a known host in the env to confirm routing."""

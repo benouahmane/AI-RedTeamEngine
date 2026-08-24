@@ -1,6 +1,6 @@
-"""Render a Cybertronium-style penetration test report.
+"""Render a penetration test report.
 
-Pulls every artefact required by FYP brief §3.3:
+Pulls every artefact the report specification requires:
   - Executive summary
   - Scope + RoE
   - Attack narrative (chronological, from PTT)

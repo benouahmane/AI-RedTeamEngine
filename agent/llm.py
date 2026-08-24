@@ -106,10 +106,10 @@ class AnthropicClient:
 
 
 class OpenRouterClient:
-    """OpenRouter gateway, for benchmarking the agent across vendors (FYP D5).
+    """OpenRouter gateway, for benchmarking the agent across vendors.
 
     Keep `LLM_PROVIDER=anthropic` for the runs that produce assessment reports —
-    the Claude API is the orchestration stack named in the brief. This client
+    the Claude API is the default orchestration stack. This client
     exists so the same target can be re-run under a different model and scored
     with `python main.py benchmark`.
 

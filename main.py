@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
 import sys
 import uuid
@@ -19,10 +20,36 @@ from agent import RedTeamAgent
 from agent.modes import CLIGateway
 from agent.orchestrator import expand_targets, run_targets
 from config import settings
+from environments.config import ENVIRONMENTS, EnvironmentSpec
 from memory import queries, task_tree
 from memory.db import Base, SessionLocal, engine
 from memory.models import OperationMode, PentestSession
 from reports import ReportGenerator
+
+
+def warn_if_outside_environment(target: str, spec: EnvironmentSpec | None) -> None:
+    """Flag a target that sits outside its environment's declared network.
+
+    Advisory only. `ALLOWED_TARGET_RANGES` remains the single scope authority —
+    labs get rebuilt on different subnets often enough that blocking here would
+    cause more confusion than it prevents, but a silent mismatch usually means
+    the wrong --env was passed.
+    """
+    if spec is None or not spec.network_cidr:
+        return
+    try:
+        inside = ipaddress.ip_address(target) in ipaddress.ip_network(
+            spec.network_cidr, strict=False
+        )
+    except ValueError:
+        return                     # CIDR or hostname target — not our business
+    if not inside:
+        print(
+            f"note: {target} is outside {spec.key}'s declared network "
+            f"({spec.network_cidr}). Continuing — scope is enforced by "
+            f"ALLOWED_TARGET_RANGES, not by the environment.",
+            file=sys.stderr,
+        )
 
 
 def cmd_init_db(_: argparse.Namespace) -> int:
@@ -35,6 +62,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not settings.allowed_cidrs:
         print("warning: ALLOWED_TARGET_RANGES is empty in .env — scope check is permissive",
               file=sys.stderr)
+    spec = ENVIRONMENTS.get(args.env)
+    warn_if_outside_environment(args.target, spec)
 
     with SessionLocal() as db:
         s = PentestSession(
@@ -42,7 +71,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             target=args.target,
             environment=args.env,
             mode=OperationMode(args.mode),
-            objective=args.objective,
+            # Falling back to the environment's own goal is why every report
+            # used to read "Objective: (not specified)".
+            objective=args.objective or (spec.default_objective if spec else None),
         )
         db.add(s)
         db.commit()

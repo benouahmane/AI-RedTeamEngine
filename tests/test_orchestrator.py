@@ -52,3 +52,68 @@ def test_model_routing_overrides():
                  anthropic_planner_model="strong", anthropic_parser_model="cheap")
     assert s.planner_model == "strong"
     assert s.parser_model == "cheap"
+
+
+# ─── environment wiring ───────────────────────────────────────────────────
+#
+# `--env` used to be a label: only the key reached the session, while the
+# spec's description, notes and default objective were never read by anything.
+
+
+def test_environment_description_and_notes_reach_the_prompt():
+    """env3's "roast before brute force" is the steer that makes the label
+    worth passing; the model previously saw only the bare key."""
+    from agent.prompts import build_step_prompt
+    from environments.config import ENVIRONMENTS
+
+    spec = ENVIRONMENTS["env3"]
+    prompt = build_step_prompt(
+        session_id="s", target="10.20.0.10", environment="env3",
+        environment_description=spec.description,
+        environment_notes=spec.notes,
+        mode="autonomous", objective=spec.default_objective,
+        allowed_targets=["10.20.0.0/16"], tree_ascii="", tree_context={},
+        previous_result=None,
+    )
+    assert "Game of Active Directory" in prompt
+    assert "Kerberoast" in prompt
+    assert "Domain Admin" in prompt
+
+
+def test_prompt_omits_the_guidance_line_when_there_is_none():
+    from agent.prompts import build_step_prompt
+
+    prompt = build_step_prompt(
+        session_id="s", target="10.0.0.1", environment="env9",
+        mode="autonomous", objective="", allowed_targets=[],
+        tree_ascii="", tree_context={}, previous_result=None,
+    )
+    assert "guidance:" not in prompt
+    assert "(no description)" in prompt
+
+
+def test_every_environment_declares_an_objective_and_description():
+    """Both now feed the agent, so a blank one silently degrades a run."""
+    from environments.config import ENVIRONMENTS
+
+    for key, spec in ENVIRONMENTS.items():
+        assert spec.default_objective.strip(), f"{key} has no default objective"
+        assert spec.description.strip(), f"{key} has no description"
+
+
+def test_target_outside_declared_network_warns_but_does_not_block(capsys):
+    """Labs get rebuilt on new subnets; a mismatch is a note, not a refusal."""
+    from environments.config import ENVIRONMENTS
+    from main import warn_if_outside_environment
+
+    env1 = ENVIRONMENTS["env1"]
+    warn_if_outside_environment("192.168.56.30", env1)
+    assert "outside env1's declared network" in capsys.readouterr().err
+
+    warn_if_outside_environment("192.168.163.131", env1)
+    assert capsys.readouterr().err == ""
+
+    # A CIDR or hostname target is not something this check can judge.
+    warn_if_outside_environment("10.0.0.0/24", env1)
+    warn_if_outside_environment("dc01.lab.local", env1)
+    assert capsys.readouterr().err == ""

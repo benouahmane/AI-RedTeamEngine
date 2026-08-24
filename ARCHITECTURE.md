@@ -1,13 +1,13 @@
 # Architecture
 
-Design notes for the AI Red Team Engine (CTM-FYP-2025-P1-RED). For setup and
+Design notes for the AI Red Team Engine. For setup and
 operation see `INSTRUCTIONS.txt`; this document covers how the system is built
 and how to extend it.
 
 **Stack:** Python 3.11, FastAPI, PostgreSQL, SQLAlchemy, Jinja2, Anthropic
 Claude API (or any model reachable through OpenRouter).
 
-**Paired project:** CTM-FYP-2025-P2-BLUE (Blue Team Defence Engine). The two
+**Paired project:** a Blue Team Defence Engine. The two
 form a purple team training range — this engine generates the attack telemetry
 that one consumes.
 
@@ -19,7 +19,7 @@ action as input to the next reasoning step.
 
 The loop is implemented directly against the provider API in `agent/core.py`.
 There is no LangChain runtime dependency — the agent needs a narrow, auditable
-decision path (every step must be logged for FYP §8.1), which is easier to
+decision path (every step must be logged for the audit trail), which is easier to
 guarantee without a framework in between.
 
 ## Layers
@@ -46,7 +46,7 @@ guarantee without a framework in between.
 3. **Parse the action** — `agent/llm.py:_parse_json_action()` extracts a JSON
    object, tolerating fenced code blocks and surrounding prose.
 4. **Log the decision** — `agent/decision_logger.py` persists context, proposed
-   action, command, and result. Required by FYP §8.1; also feeds the report's
+   action, command, and result. This is the audit trail; it also feeds the report's
    audit appendix.
 5. **Gate on approval** — in `human_in_loop` mode, block on the approval gateway.
 6. **Check scope** — reject any target outside `ALLOWED_TARGET_RANGES`.
@@ -239,7 +239,7 @@ deployment would swap this for a worker queue.
 `reports/generator.py:ReportGenerator.write()` renders
 `reports/templates/pentest_report.html.j2` to `artefacts/reports/<session_id>.html`.
 
-The template contains the seven sections required by FYP §3.3 — executive summary,
+The template contains all seven report sections — executive summary,
 scope and rules of engagement, attack narrative, evidence table, vulnerability
 register, ATT&CK coverage matrix, recommendations — plus appendices for
 discovered hosts and the full decision log.
@@ -250,7 +250,7 @@ carries a TTP tag.
 
 The output schema is fixed: update the template if model fields change.
 
-## Benchmarking (FYP D5)
+## Benchmarking
 
 `benchmark/` scores a completed session against per-target ground truth.
 
@@ -271,7 +271,7 @@ The output schema is fixed: update the template if model fields change.
 - **anthropic** — official SDK, prompt caching on the system prompt.
 - **openrouter** — gateway to many vendors over an OpenAI-compatible API.
   Added so the same target can be re-run under a different model and scored
-  (FYP D5). Two opt-in settings cover provider variation:
+  across vendors. Two opt-in settings cover provider variation:
   `OPENROUTER_CACHE_SYSTEM` sends the system prompt with an explicit
   `cache_control` breakpoint (some vendors need it, others cache
   automatically), and `OPENROUTER_JSON_MODE` requests guaranteed-JSON output

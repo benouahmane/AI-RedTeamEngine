@@ -1,6 +1,6 @@
 """Benchmark harness — score the agent against per-target ground truth.
 
-Implements FYP deliverable D5 (Benchmark Study): a repeatable way to measure
+Implements the benchmark study: a repeatable way to measure
 the autonomous agent's coverage, accuracy, time-to-exploit, and cost, and to
 compare it against a recorded manual-pentest baseline.
 
